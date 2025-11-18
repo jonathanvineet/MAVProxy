@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from pymavlink import mavutil
 import threading
 import numpy as np
+import csv
+import re
 
 MAVGRAPH_DEBUG = 'MAVGRAPH_DEBUG' in os.environ
 
@@ -663,6 +665,55 @@ class MavGraph(object):
             interactive = True
             if output is not None:
                 interactive = False
+            # export CSV for this graph before plotting
+            try:
+                # determine csv directory at MAVProxy root: <repo>/MAVProxy/csv
+                mavproxy_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                csv_dir = os.path.join(mavproxy_root, 'csv')
+                os.makedirs(csv_dir, exist_ok=True)
+
+                # make safe base name using time and title or first field
+                ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                base = self.title if self.title is not None else (self.fields[0] if len(self.fields) > 0 else 'graph')
+                base_safe = re.sub(r'[^A-Za-z0-9._-]', '_', base)
+                csv_name = "%s_%s.csv" % (ts, base_safe)
+                csv_path = os.path.join(csv_dir, csv_name)
+
+                # write CSV with per-field time and value columns
+                with open(csv_path, 'w', newline='') as csvfile:
+                    w = csv.writer(csvfile)
+                    # header: for each field we include time and value columns
+                    header = []
+                    for f in self.fields:
+                        f_safe = re.sub(r'[^A-Za-z0-9._-]', '_', f)
+                        header.append('time_%s' % f_safe)
+                        header.append('%s' % f_safe)
+                    w.writerow(header)
+                    # determine max length among fields
+                    maxlen = 0
+                    for arr in self.x:
+                        if len(arr) > maxlen:
+                            maxlen = len(arr)
+                    for idx in range(maxlen):
+                        row = []
+                        for i in range(0, len(self.x)):
+                            try:
+                                xv = self.x[i][idx]
+                            except Exception:
+                                xv = ''
+                            try:
+                                yv = self.y[i][idx]
+                            except Exception:
+                                yv = ''
+                            row.append(xv)
+                            row.append(yv)
+                        w.writerow(row)
+                # notify via stdout
+                print('Exported graph data to %s' % csv_path)
+            except Exception as ex:
+                if MAVGRAPH_DEBUG:
+                    print('Failed to export CSV: %s' % ex)
+
             self.plotit(self.x, self.y, lab, colors=col, title=self.title, interactive=interactive)
             for i in range(0, len(self.x)):
                 self.x[i] = []
