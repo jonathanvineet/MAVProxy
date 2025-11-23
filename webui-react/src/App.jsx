@@ -9,11 +9,21 @@ export default function App(){
   const [token, setToken] = useState(null)
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState({msg:null, field:null})
+    const [error, setError] = useState(null)
 
-  async function handleUpload(file, options){
+  async function handleUpload(file, options, onProgress){
     setLoading(true)
+      setError(null)
     try{
-      const res = await api.uploadFile(file, options)
+      let res
+      // support bypass param passed through from FileUploader (onUpload signature: file, options, onProgress, bypass)
+      // onProgress may be the 3rd arg, but FileUploader passes a 4th 'bypass' boolean as the last param.
+      if(arguments.length >= 4 && arguments[3]){
+        // direct upload to backend
+        res = await api.uploadFileDirect(file, options, onProgress)
+      } else {
+        res = await api.uploadFile(file, options, onProgress)
+      }
       // server returns { token, analysis }
       setToken(res.data.token)
       setAnalysis(res.data.analysis)
@@ -22,7 +32,10 @@ export default function App(){
       const firstField = res.data.analysis.messages[firstMsg]?.fields?.[0]
       setSelected({msg:firstMsg, field:firstField})
     }catch(e){
-      alert('Error analyzing file: '+(e?.response?.data?.error || e.message))
+      const msg = (e?.response?.data?.error || e.message)
+      console.error('Analyze error', msg, e)
+      setError(msg)
+      alert('Error analyzing file: '+msg)
     }finally{ setLoading(false) }
   }
 
@@ -34,6 +47,7 @@ export default function App(){
       </div>
 
       <div className="grid">
+          {error && <div style={{color:'crimson', marginBottom:8}}>{error}</div>}
         <div className="panel">
           <FileUploader onUpload={handleUpload} loading={loading} />
           <div style={{marginTop:12}}>

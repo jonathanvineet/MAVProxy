@@ -62,6 +62,7 @@ def load_graph_definitions():
 
 def analyze_file_basic(path):
     """Scan a log file and return a summary of messages and numeric fields."""
+    # Stream the file and only keep counts and a set of numeric fields per message
     msgs = {}
     try:
         mlog = mavutil.mavlink_connection(path)
@@ -70,25 +71,24 @@ def analyze_file_basic(path):
             if m is None:
                 break
             name = m.get_type()
-            d = {}
-            t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
-            if t is not None and t > 1e12:
-                t = t/1e6
-            d['_time'] = t
-            for k,v in m.to_dict().items():
+            info = msgs.get(name)
+            if info is None:
+                info = {'count': 0, 'fields': set()}
+                msgs[name] = info
+            info['count'] += 1
+            for k, v in m.to_dict().items():
+                if k == '_time':
+                    continue
                 if isinstance(v, (int, float)):
-                    d[k] = v
-            msgs.setdefault(name, []).append(d)
-    except Exception as e:
+                    info['fields'].add(k)
+    except Exception:
+        # propagate for caller to handle and report
         raise
 
     out = {'messages': {}}
-    for name, rows in msgs.items():
-        fields = set()
-        for r in rows:
-            fields.update([k for k in r.keys() if k != '_time'])
-        fields = sorted(list(fields))
-        out['messages'][name] = {'count': len(rows), 'fields': fields}
+    for name, info in msgs.items():
+        fields = sorted(list(info['fields']))
+        out['messages'][name] = {'count': info['count'], 'fields': fields}
 
     return out
 

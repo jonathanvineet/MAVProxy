@@ -1,7 +1,15 @@
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import os, tempfile, json, uuid
+from flask import make_response
+import logging
 
+# enable CORS (allow browser direct uploads during development)
+try:
+    from flask_cors import CORS
+    has_flask_cors = True
+except Exception:
+    has_flask_cors = False
 try:
     from server import mavexplorer_api
 except ModuleNotFoundError:
@@ -12,6 +20,25 @@ except ModuleNotFoundError:
     mavexplorer_api = mavexplorer_api
 
 app = Flask(__name__)
+
+# Prevent extremely large uploads from exhausting server memory (tunable)
+# Set to 200MB by default for development; adjust as needed for large logs.
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
+
+# configure basic logging to a file for debugging large-upload crashes
+logging.basicConfig(level=logging.INFO, filename='/tmp/analyze_server_runtime.log',
+                    format='%(asctime)s %(levelname)s %(message)s')
+
+if has_flask_cors:
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+@app.after_request
+def add_cors_headers(response):
+    # Ensure minimal CORS headers are present even if Flask-Cors isn't installed
+    response.headers.setdefault('Access-Control-Allow-Origin', '*')
+    response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.setdefault('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    return response
 
 try:
     from pymavlink import mavutil
@@ -111,6 +138,11 @@ def graphs():
     return jsonify({'graphs': out})
 
 
+@app.route('/api/ping')
+def ping():
+    return jsonify({'ok': True})
+
+
 @app.route('/api/graph')
 def graph_eval():
     """Evaluate a predefined graph against an uploaded file.
@@ -179,4 +211,7 @@ def timeseries():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3030, debug=True)
+    # Run without the reloader and with threading enabled to avoid child-reloader
+    # killing the parent process on heavy loads. This makes crash traces
+    # appear in the single process log and prevents confusing `suspended` jobs.
+    app.run(host='0.0.0.0', port=3030, debug=False, threaded=True, use_reloader=False)
