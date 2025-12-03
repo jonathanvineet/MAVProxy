@@ -65,47 +65,8 @@ def analyze():
     try:
         out = mavexplorer_api.analyze_file_basic(path)
     except Exception as e:
+        logging.error(f"Failed to analyze file: {e}", exc_info=True)
         return jsonify({'error':'failed to parse log: '+str(e)}), 500
-
-    # Save CSVs into temp for download endpoint
-    # create CSVs in tmpdir/csv for convenience (we'll align fields per timestamp)
-    csv_dir = os.path.join(tmpdir, 'csv')
-    os.makedirs(csv_dir, exist_ok=True)
-    import csv
-    for name, info in out['messages'].items():
-        if not info['fields']:
-            continue
-        csv_path = os.path.join(csv_dir, f"{name}.csv")
-        # do a quick second pass to fill CSV per message type
-        # we stream the file and build a time->fields map
-        times = {}
-        try:
-            mlog = mavutil.mavlink_connection(path)
-            for m in iter(lambda: mlog.recv_match(), None):
-                if m is None:
-                    break
-                if m.get_type() != name:
-                    continue
-                t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
-                if t is not None and t > 1e12:
-                    t = t/1e6
-                rowvals = {}
-                for k,v in m.to_dict().items():
-                    if k in info['fields']:
-                        rowvals[k] = v
-                if t is None:
-                    continue
-                times.setdefault(t, {})
-                times[t].update(rowvals)
-        except Exception:
-            # if streaming fails, skip CSV for this message
-            continue
-        with open(csv_path, 'w', newline='') as fh:
-            writer = csv.writer(fh)
-            writer.writerow(['_time'] + info['fields'])
-            for t in sorted(times.keys()):
-                row = [t] + [times[t].get(f, '') for f in info['fields']]
-                writer.writerow(row)
 
     # register upload token so subsequent requests can reference this analysis
     token = str(uuid.uuid4())
@@ -115,17 +76,55 @@ def analyze():
 
 @app.route('/api/download')
 def download():
-    # expects ?token=TOKEN&msg=MSG
+    """Generate and download CSV for a specific message type on demand."""
     token = request.args.get('token')
     msg = request.args.get('msg')
     if not token or token not in UPLOADS:
         return jsonify({'error':'valid token required'}), 400
     if not msg:
         return jsonify({'error':'msg param required'}), 400
-    csv_path = os.path.join(UPLOADS[token]['tmpdir'], 'csv', f"{msg}.csv")
-    if not os.path.exists(csv_path):
-        return jsonify({'error':'CSV not found; re-run analysis'}), 404
-    return send_file(csv_path, as_attachment=True)
+    
+    path = UPLOADS[token]['path']
+    analysis = UPLOADS[token]['analysis']
+    
+    if msg not in analysis['messages']:
+        return jsonify({'error':f'message type {msg} not found'}), 404
+    
+    info = analysis['messages'][msg]
+    if not info['fields']:
+        return jsonify({'error':'no numeric fields in message'}), 400
+    
+    # Generate CSV on-the-fly using streaming to avoid memory issues
+    import csv
+    import io
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['_time'] + info['fields'])
+    
+    try:
+        mlog = mavutil.mavlink_connection(path)
+        while True:
+            m = mlog.recv_match(type=msg)
+            if m is None:
+                break
+            t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
+            if t is not None and t > 1e12:
+                t = t/1e6
+            row = [t] + [m.to_dict().get(f, '') for f in info['fields']]
+            writer.writerow(row)
+    except Exception as e:
+        logging.error(f"CSV generation failed: {e}", exc_info=True)
+        return jsonify({'error':'CSV generation failed: '+str(e)}), 500
+    
+    # Return as downloadable file
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8')),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'{msg}.csv'
+    )
 
 
 @app.route('/api/graphs')
@@ -208,6 +207,180 @@ def timeseries():
     except Exception as e:
         return jsonify({'error':'failed to extract timeseries: '+str(e)}), 500
     return jsonify({'msg': msg, 'field': field, 'series': series})
+
+
+@app.route('/api/params')
+def get_params():
+    """Get all parameters from the uploaded log file."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    
+    path = UPLOADS[token]['path']
+    try:
+        params = {}
+        mlog = mavutil.mavlink_connection(path)
+        while True:
+            m = mlog.recv_match(type='PARM')
+            if m is None:
+                break
+            params[m.Name] = m.Value
+        mlog.rewind()
+        return jsonify({'params': params, 'count': len(params)})
+    except Exception as e:
+        logging.error(f"Failed to extract params: {e}", exc_info=True)
+        return jsonify({'error':'failed to extract params: '+str(e)}), 500
+
+
+@app.route('/api/param_changes')
+def get_param_changes():
+    """Get parameter changes throughout the log."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    
+    path = UPLOADS[token]['path']
+    try:
+        changes = []
+        mlog = mavutil.mavlink_connection(path)
+        while True:
+            m = mlog.recv_match(type='PARM')
+            if m is None:
+                break
+            t = getattr(m, '_timestamp', 0)
+            changes.append({
+                'timestamp': t,
+                'name': m.Name,
+                'value': m.Value
+            })
+        mlog.rewind()
+        return jsonify({'changes': changes, 'count': len(changes)})
+    except Exception as e:
+        logging.error(f"Failed to extract param changes: {e}", exc_info=True)
+        return jsonify({'error':'failed to extract param changes: '+str(e)}), 500
+
+
+@app.route('/api/stats')
+def get_stats():
+    """Get statistics about the log file."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    
+    path = UPLOADS[token]['path']
+    analysis = UPLOADS[token]['analysis']
+    
+    try:
+        mlog = mavutil.mavlink_connection(path)
+        first_timestamp = None
+        last_timestamp = None
+        total_messages = 0
+        
+        while True:
+            m = mlog.recv_match()
+            if m is None:
+                break
+            total_messages += 1
+            t = getattr(m, '_timestamp', None)
+            if t is not None:
+                if first_timestamp is None:
+                    first_timestamp = t
+                last_timestamp = t
+        
+        duration = (last_timestamp - first_timestamp) if (first_timestamp and last_timestamp) else 0
+        
+        return jsonify({
+            'total_messages': total_messages,
+            'message_types': len(analysis['messages']),
+            'first_timestamp': first_timestamp,
+            'last_timestamp': last_timestamp,
+            'duration_seconds': duration,
+            'messages_per_type': {k: v['count'] for k, v in analysis['messages'].items()}
+        })
+    except Exception as e:
+        logging.error(f"Failed to get stats: {e}", exc_info=True)
+        return jsonify({'error':'failed to get stats: '+str(e)}), 500
+
+
+@app.route('/api/flight_modes')
+def get_flight_modes():
+    """Extract flight mode changes from the log."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    
+    path = UPLOADS[token]['path']
+    try:
+        modes = []
+        mlog = mavutil.mavlink_connection(path)
+        
+        # Try to get mode from MODE message or HEARTBEAT
+        while True:
+            m = mlog.recv_match(type=['MODE', 'HEARTBEAT'])
+            if m is None:
+                break
+            t = getattr(m, '_timestamp', None)
+            mode_name = None
+            
+            if m.get_type() == 'MODE':
+                mode_name = getattr(m, 'Mode', None)
+            elif m.get_type() == 'HEARTBEAT':
+                # Try to interpret mode from custom_mode
+                mode_name = getattr(m, 'custom_mode', None)
+            
+            if t and mode_name is not None:
+                modes.append({'timestamp': t, 'mode': mode_name})
+        
+        return jsonify({'modes': modes})
+    except Exception as e:
+        logging.error(f"Failed to extract flight modes: {e}", exc_info=True)
+        return jsonify({'error':'failed to extract flight modes: '+str(e)}), 500
+
+
+@app.route('/api/messages')
+def list_messages():
+    """List all message types in the log with their counts and fields."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    
+    analysis = UPLOADS[token]['analysis']
+    return jsonify({'messages': analysis['messages']})
+
+
+@app.route('/api/dump')
+def dump_messages():
+    """Dump raw messages of a specific type with optional limit."""
+    token = request.args.get('token')
+    msg_type = request.args.get('type')
+    limit = int(request.args.get('limit', 100))
+    
+    if not token or token not in UPLOADS:
+        return jsonify({'error':'valid token required'}), 400
+    if not msg_type:
+        return jsonify({'error':'type param required'}), 400
+    
+    path = UPLOADS[token]['path']
+    try:
+        messages = []
+        mlog = mavutil.mavlink_connection(path)
+        count = 0
+        
+        while count < limit:
+            m = mlog.recv_match(type=msg_type)
+            if m is None:
+                break
+            t = getattr(m, '_timestamp', None)
+            messages.append({
+                'timestamp': t,
+                'data': m.to_dict()
+            })
+            count += 1
+        
+        return jsonify({'type': msg_type, 'messages': messages, 'count': len(messages)})
+    except Exception as e:
+        logging.error(f"Failed to dump messages: {e}", exc_info=True)
+        return jsonify({'error':'failed to dump messages: '+str(e)}), 500
 
 
 if __name__ == '__main__':

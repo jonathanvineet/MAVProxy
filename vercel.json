@@ -1,0 +1,22 @@
+{
+  "buildCommand": "npm install --legacy-peer-deps && cd webui-react && npm install && npm run build",
+  "outputDirectory": "webui-react/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "@vite_api_url"
+  },
+  "functions": {
+    "api/index.py": {
+      "runtime": "python3.11"
+    }
+  }
+}
