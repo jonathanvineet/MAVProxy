@@ -45,6 +45,15 @@ try:
 except:
     pass
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE'
+        return response
+
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -55,12 +64,14 @@ def add_cors_headers(response):
 # In-memory storage for uploads (note: Vercel instances are ephemeral)
 UPLOADS = {}
 
+@app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok'})
 
-@app.route('/api/analyze', methods=['POST'])
+@app.route('/analyze', methods=['POST', 'OPTIONS'])
+@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
 def analyze():
     """Analyze uploaded MAVLink log file."""
     if 'file' not in request.files:
