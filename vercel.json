@@ -4,16 +4,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/api/index"
     }
-  ],
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.11"
-    }
-  }
+  ]
 }
