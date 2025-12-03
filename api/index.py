@@ -17,16 +17,15 @@ import logging
 import json
 import io
 import csv
+import gzip
+import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import the analysis API
-try:
-    from server import mavexplorer_api
-except ModuleNotFoundError:
-    import mavexplorer_api
+import mavexplorer_api
 
 try:
     from pymavlink import mavutil
@@ -36,7 +35,9 @@ except Exception as e:
 
 # Create Flask app
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
+# Vercel has a 4.5MB payload limit for serverless functions
+# Set max content length to 4MB to stay safe
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
 
 # Enable CORS
 try:
@@ -50,25 +51,145 @@ def handle_preflight():
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
         response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE'
+        response.headers['Access-Control-Allow-Headers'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+        response.headers['Access-Control-Max-Age'] = '3600'
         return response
 
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    # Prevent caching of error responses
+    if response.status_code >= 400:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     return response
+
+@app.errorhandler(413)
+def payload_too_large(e):
+    """Handle file too large errors."""
+    return jsonify({
+        'error': 'Compressed file too large. Maximum compressed size is 4MB. Try enabling higher compression or use a smaller file, or run MAVProxy locally for very large files.'
+    }), 413
 
 # In-memory storage for uploads (note: Vercel instances are ephemeral)
 UPLOADS = {}
+# Storage for chunked uploads
+CHUNK_UPLOADS = {}
 
 @app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok'})
+
+@app.route('/upload_chunk', methods=['POST', 'OPTIONS'])
+@app.route('/api/upload_chunk', methods=['POST', 'OPTIONS'])
+def upload_chunk():
+    """Handle chunked file uploads."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file uploaded'}), 400
+    
+    chunk_file = request.files['file']
+    chunk_index = int(request.form.get('chunk_index', 0))
+    total_chunks = int(request.form.get('total_chunks', 1))
+    upload_id = request.form.get('upload_id')
+    original_filename = request.form.get('original_filename')
+    original_size = int(request.form.get('original_size', 0))
+    total_size = int(request.form.get('total_size', 0))
+    
+    if not upload_id:
+        return jsonify({'error': 'upload_id required'}), 400
+    
+    logger.info(f"Receiving chunk {chunk_index + 1}/{total_chunks} for upload {upload_id}")
+    
+    # Create temp directory for this upload
+    if upload_id not in CHUNK_UPLOADS:
+        tmpdir = tempfile.mkdtemp(prefix='mavexplorer_chunks_')
+        CHUNK_UPLOADS[upload_id] = {
+            'tmpdir': tmpdir,
+            'chunks_received': [],
+            'total_chunks': total_chunks,
+            'original_filename': original_filename,
+            'original_size': original_size,
+            'total_size': total_size
+        }
+    
+    upload_info = CHUNK_UPLOADS[upload_id]
+    tmpdir = upload_info['tmpdir']
+    
+    # Save chunk
+    chunk_path = os.path.join(tmpdir, f'chunk_{chunk_index:04d}')
+    chunk_file.save(chunk_path)
+    upload_info['chunks_received'].append(chunk_index)
+    
+    logger.info(f"Saved chunk {chunk_index}, received {len(upload_info['chunks_received'])}/{total_chunks}")
+    
+    # If all chunks received, reassemble and process
+    if len(upload_info['chunks_received']) == total_chunks:
+        logger.info(f"All chunks received for {upload_id}, reassembling...")
+        
+        # Reassemble compressed file
+        compressed_path = os.path.join(tmpdir, original_filename + '.gz')
+        try:
+            with open(compressed_path, 'wb') as outfile:
+                for i in range(total_chunks):
+                    chunk_path = os.path.join(tmpdir, f'chunk_{i:04d}')
+                    with open(chunk_path, 'rb') as infile:
+                        outfile.write(infile.read())
+                    # Delete chunk after reading
+                    os.remove(chunk_path)
+            
+            logger.info(f"Reassembled compressed file: {os.path.getsize(compressed_path)} bytes")
+            
+            # Decompress
+            decompressed_path = os.path.join(tmpdir, original_filename)
+            logger.info(f"Decompressing to {decompressed_path}")
+            
+            with gzip.open(compressed_path, 'rb') as f_in:
+                with open(decompressed_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            
+            # Remove compressed file
+            os.remove(compressed_path)
+            
+            logger.info(f"Decompressed successfully. Size: {os.path.getsize(decompressed_path)} bytes")
+            
+            # Analyze the file
+            if mavutil is None:
+                return jsonify({'error': 'pymavlink not installed on server'}), 500
+            
+            try:
+                out = mavexplorer_api.analyze_file_basic(decompressed_path)
+            except Exception as e:
+                logger.error(f"Failed to analyze file: {e}", exc_info=True)
+                return jsonify({'error': 'failed to parse log: ' + str(e)}), 500
+            
+            # Store results
+            token = str(uuid.uuid4())
+            UPLOADS[token] = {'tmpdir': tmpdir, 'path': decompressed_path, 'analysis': out}
+            
+            # Clean up chunk upload tracking
+            del CHUNK_UPLOADS[upload_id]
+            
+            return jsonify({'token': token, 'analysis': out})
+            
+        except Exception as e:
+            logger.error(f"Failed to process chunks: {e}", exc_info=True)
+            return jsonify({'error': f'failed to process chunks: {str(e)}'}), 500
+    
+    # Not all chunks received yet
+    return jsonify({
+        'status': 'chunk_received',
+        'chunk_index': chunk_index,
+        'received': len(upload_info['chunks_received']),
+        'total': total_chunks
+    })
+
 
 @app.route('/analyze', methods=['POST', 'OPTIONS'])
 @app.route('/api/analyze', methods=['POST', 'OPTIONS'])
@@ -78,10 +199,39 @@ def analyze():
         return jsonify({'error': 'no file uploaded'}), 400
     
     f = request.files['file']
-    fname = secure_filename(f.filename)
+    is_compressed = request.form.get('compressed') == 'true'
+    original_filename = request.form.get('original_filename', f.filename)
+    original_size = request.form.get('original_size', '0')
+    
+    logger.info(f"Received file: {f.filename}, compressed: {is_compressed}, original: {original_filename}")
+    
+    fname = secure_filename(original_filename)
     tmpdir = tempfile.mkdtemp(prefix='mavexplorer_')
-    path = os.path.join(tmpdir, fname)
-    f.save(path)
+    
+    # If file is compressed, decompress it first
+    if is_compressed and f.filename.endswith('.gz'):
+        compressed_path = os.path.join(tmpdir, secure_filename(f.filename))
+        f.save(compressed_path)
+        
+        # Decompress
+        path = os.path.join(tmpdir, fname)
+        logger.info(f"Decompressing {compressed_path} to {path}")
+        
+        try:
+            with gzip.open(compressed_path, 'rb') as f_in:
+                with open(path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            
+            # Remove compressed file to save space
+            os.remove(compressed_path)
+            logger.info(f"Decompressed successfully. Size: {os.path.getsize(path)} bytes")
+        except Exception as e:
+            logger.error(f"Decompression failed: {e}", exc_info=True)
+            return jsonify({'error': f'failed to decompress file: {str(e)}'}), 500
+    else:
+        # Save uncompressed file directly
+        path = os.path.join(tmpdir, fname)
+        f.save(path)
     
     if mavutil is None:
         return jsonify({'error': 'pymavlink not installed on server'}), 500
@@ -96,6 +246,7 @@ def analyze():
     UPLOADS[token] = {'tmpdir': tmpdir, 'path': path, 'analysis': out}
     return jsonify({'token': token, 'analysis': out})
 
+@app.route('/download', methods=['GET'])
 @app.route('/api/download', methods=['GET'])
 def download():
     """Generate and download CSV for a specific message type."""
@@ -144,6 +295,7 @@ def download():
         download_name=f'{msg}.csv'
     )
 
+@app.route('/timeseries', methods=['GET'])
 @app.route('/api/timeseries', methods=['GET'])
 def timeseries():
     """Return timeseries for a given message type and field."""
@@ -184,6 +336,7 @@ def timeseries():
     
     return jsonify({'msg': msg, 'field': field, 'series': series})
 
+@app.route('/graphs', methods=['GET'])
 @app.route('/api/graphs', methods=['GET'])
 def graphs():
     """Return list of predefined graphs."""
@@ -197,6 +350,7 @@ def graphs():
         logger.error(f"Failed to load graphs: {e}", exc_info=True)
         return jsonify({'error': 'failed to load graphs: ' + str(e)}), 500
 
+@app.route('/graph', methods=['GET'])
 @app.route('/api/graph', methods=['GET'])
 def graph_eval():
     """Evaluate a predefined graph against an uploaded file."""
@@ -226,11 +380,13 @@ def graph_eval():
         logger.error(f"Failed to evaluate graph: {e}", exc_info=True)
         return jsonify({'error': 'failed to evaluate graph: ' + str(e)}), 500
 
+@app.route('/ping', methods=['GET'])
 @app.route('/api/ping', methods=['GET'])
 def ping():
     """Ping endpoint for health checks."""
     return jsonify({'ok': True})
 
+@app.route('/messages', methods=['GET'])
 @app.route('/api/messages', methods=['GET'])
 def list_messages():
     """List all message types in the log."""
@@ -241,6 +397,7 @@ def list_messages():
     analysis = UPLOADS[token]['analysis']
     return jsonify({'messages': analysis['messages']})
 
+@app.route('/dump', methods=['GET'])
 @app.route('/api/dump', methods=['GET'])
 def dump_messages():
     """Dump raw messages of a specific type."""
@@ -272,6 +429,7 @@ def dump_messages():
         logger.error(f"Failed to dump messages: {e}", exc_info=True)
         return jsonify({'error': 'failed to dump messages: ' + str(e)}), 500
 
+@app.route('/stats', methods=['GET'])
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     """Get statistics about the log file."""
@@ -313,6 +471,7 @@ def get_stats():
         logger.error(f"Failed to get stats: {e}", exc_info=True)
         return jsonify({'error': 'failed to get stats: ' + str(e)}), 500
 
+@app.route('/params', methods=['GET'])
 @app.route('/api/params', methods=['GET'])
 def get_params():
     """Get all parameters from the log file."""
@@ -335,10 +494,6 @@ def get_params():
         logger.error(f"Failed to extract params: {e}", exc_info=True)
         return jsonify({'error': 'failed to extract params: ' + str(e)}), 500
 
-# Export for Vercel
-import asyncio
-from asgiref.sync import async_to_sync
-
-async def handler(request):
-    """ASGI handler for Vercel."""
-    return app(request.environ, request.start_response)
+# Export the Flask app for Vercel
+# Vercel's Python runtime expects a variable named 'app' or a function named 'handler'
+app = app
