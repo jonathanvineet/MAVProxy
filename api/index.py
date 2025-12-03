@@ -41,15 +41,15 @@ app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 # Enable CORS
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {"origins": "*"}})
 except:
     pass
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers.setdefault('Access-Control-Allow-Origin', '*')
-    response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.setdefault('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE'
     return response
 
 # In-memory storage for uploads (note: Vercel instances are ephemeral)
