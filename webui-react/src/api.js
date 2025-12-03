@@ -1,12 +1,14 @@
 import axios from 'axios'
 
-// Determine API base URL based on environment
+// Use environment variable for API URL in production, localhost in development
 const getAPIBaseURL = () => {
-  // In production (Vercel), use the same origin with /api suffix
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  // Fallback for development
   if (typeof window !== 'undefined' && !window.location.origin.includes('localhost')) {
     return window.location.origin + '/api'
   }
-  // In development, use /api (proxied by Vite to localhost:3030)
   return '/api'
 }
 
@@ -27,7 +29,7 @@ export default {
     })
   },
   uploadFileDirect: (file, options={}, onUploadProgress=null) => {
-    // Use the same API base URL
+    // Use the configured API base URL
     const url = getAPIBaseURL() + '/analyze'
     const fd = new FormData()
     fd.append('file', file)
