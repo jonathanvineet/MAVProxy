@@ -3,8 +3,6 @@ pymavlink
 pandas
 Flask-Cors
 werkzeug
-supabase
 python-dotenv
 requests
-supabase
-python-dotenv
+lxml

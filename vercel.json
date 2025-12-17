@@ -1,11 +1,10 @@
 {
   "buildCommand": "cd webui-react && npm install && npm run build",
   "outputDirectory": "webui-react/dist",
-  "build": {
-    "env": {
-      "VITE_API_URL": "https://mavproxy-backend.vercel.app"
-    }
+  "env": {
+    "VITE_API_URL": "@mavexplorer_api_url"
   },
+  "envPrefix": "VITE_",
   "rewrites": [
     {
       "source": "/(.*)",
