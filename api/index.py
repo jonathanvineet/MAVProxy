@@ -50,52 +50,32 @@ app = Flask(__name__)
 # Set max content length to 4MB to stay safe
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
 
-# Enable CORS with explicit configuration
+# Enable CORS
 try:
     from flask_cors import CORS
-    # Allow all origins for now (can be restricted later)
-    CORS(app, 
-         resources={r"/*": {
-             "origins": "*",
-             "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
-             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-             "supports_credentials": True,
-             "max_age": 3600
-         }},
-         send_wildcard=True,
-         automatic_options=True
-    )
-except ImportError:
-    logger.warning("flask_cors not available, CORS may not work properly")
+    CORS(app, resources={r"/*": {"origins": "*"}})
+except:
+    pass
 
-# Explicit CORS handling for all requests
 @app.before_request
 def handle_preflight():
-    """Handle CORS preflight requests"""
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
-        response.headers['Access-Control-Allow-Headers'] = request.headers.get('Access-Control-Request-Headers', 'Content-Type,Authorization')
         response.headers['Access-Control-Max-Age'] = '3600'
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.status_code = 200
         return response
 
 @app.after_request
 def add_cors_headers(response):
-    """Add CORS headers to all responses"""
-    origin = request.headers.get('Origin', '*')
-    response.headers['Access-Control-Allow-Origin'] = origin
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With'
     response.headers['Access-Control-Max-Age'] = '3600'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    response.headers['Vary'] = 'Origin'
-    
     # Prevent caching of error responses
     if response.status_code >= 400:
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Cache-Control'] = 'no-Cache, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     return response
@@ -177,8 +157,8 @@ def get_profile_analyses(profile_id):
     return jsonify({'analyses': analyses})
 
 
-@app.route('/upload_chunk', methods=['POST', 'OPTIONS'])
-@app.route('/api/upload_chunk', methods=['POST', 'OPTIONS'])
+@app.route('/upload_chunk', methods=['POST'])
+@app.route('/api/upload_chunk', methods=['POST'])
 def upload_chunk():
     """Handle chunked file uploads."""
     if 'file' not in request.files:
@@ -307,8 +287,8 @@ def upload_chunk():
     })
 
 
-@app.route('/analyze', methods=['POST', 'OPTIONS'])
-@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
+@app.route('/analyze', methods=['POST'])
+@app.route('/api/analyze', methods=['POST'])
 def analyze():
     """Analyze uploaded MAVLink log file."""
     if 'file' not in request.files:
@@ -362,8 +342,8 @@ def analyze():
     UPLOADS[token] = {'tmpdir': tmpdir, 'path': path, 'analysis': out}
     return jsonify({'token': token, 'analysis': out})
 
-@app.route('/download', methods=['GET', 'OPTIONS'])
-@app.route('/api/download', methods=['GET', 'OPTIONS'])
+@app.route('/download', methods=['GET'])
+@app.route('/api/download', methods=['GET'])
 def download():
     """Generate and download CSV for a specific message type."""
     token = request.args.get('token')
@@ -411,8 +391,8 @@ def download():
         download_name=f'{msg}.csv'
     )
 
-@app.route('/timeseries', methods=['GET', 'OPTIONS'])
-@app.route('/api/timeseries', methods=['GET', 'OPTIONS'])
+@app.route('/timeseries', methods=['GET'])
+@app.route('/api/timeseries', methods=['GET'])
 def timeseries():
     """Return timeseries for a given message type and field."""
     token = request.args.get('token')
@@ -452,8 +432,8 @@ def timeseries():
     
     return jsonify({'msg': msg, 'field': field, 'series': series})
 
-@app.route('/graphs', methods=['GET', 'OPTIONS'])
-@app.route('/api/graphs', methods=['GET', 'OPTIONS'])
+@app.route('/graphs', methods=['GET'])
+@app.route('/api/graphs', methods=['GET'])
 def graphs():
     """Return list of predefined graphs."""
     try:
@@ -471,8 +451,8 @@ def graphs():
         logger.error(f"Failed to load graphs: {e}", exc_info=True)
         return jsonify({'error': 'failed to load graphs: ' + str(e)}), 500
 
-@app.route('/graph', methods=['GET', 'OPTIONS'])
-@app.route('/api/graph', methods=['GET', 'OPTIONS'])
+@app.route('/graph', methods=['GET'])
+@app.route('/api/graph', methods=['GET'])
 def graph_eval():
     """Evaluate a predefined graph against an uploaded file."""
     token = request.args.get('token')
