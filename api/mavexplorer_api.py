@@ -2,49 +2,23 @@ import os
 import sys
 import tempfile
 from pymavlink import mavutil
-from pymavlink.mavextra import *
 import uuid
-import xml.etree.ElementTree as ET
 import re
 
-# Add MAVProxy to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
-
-from MAVProxy.modules.lib.graphdefinition import GraphDefinition
+# Simple GraphDefinition class for Vercel (no MAVProxy dependency)
+class GraphDefinition:
+    def __init__(self, name, expression, description='', expressions=None, filename=''):
+        self.name = name
+        self.expression = expression
+        self.description = description
+        self.expressions = expressions or [expression]
+        self.filename = filename
 
 def load_graph_definitions():
-    """Load predefined graphs from mavgraphs.xml"""
-    # Find the mavgraphs.xml file
-    xml_path = os.path.join(parent_dir, 'MAVProxy', 'tools', 'graphs', 'mavgraphs.xml')
-    
-    if not os.path.exists(xml_path):
-        return []
-    
-    try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        graphs = []
-        
-        for graph_elem in root.findall('graph'):
-            name = graph_elem.get('name', 'Unnamed')
-            description_elem = graph_elem.find('description')
-            description = description_elem.text.strip() if description_elem is not None and description_elem.text else ''
-            
-            expressions = []
-            for expr_elem in graph_elem.findall('expression'):
-                if expr_elem.text:
-                    expressions.append(expr_elem.text.strip())
-            
-            if expressions:
-                # Create GraphDefinition for each expression set
-                graphs.append(GraphDefinition(name, expressions[0], description, expressions, xml_path))
-        
-        return graphs
-    except Exception as e:
-        print(f"Error loading graphs: {e}")
-        return []
+    """Load predefined graphs - returns empty list in serverless environment"""
+    # In Vercel serverless environment, we don't have access to MAVProxy graph files
+    # Return empty list - users can still use custom graphs
+    return []
 
 
 def analyze_file_basic(path):
