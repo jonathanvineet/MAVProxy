@@ -3,13 +3,23 @@
   "builds": [
     {
       "src": "index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "index.py"
+    },
+    {
       "src": "/(.*)",
       "dest": "index.py"
     }
-  ]
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.12"
+  }
 }

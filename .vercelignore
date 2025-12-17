@@ -1,0 +1,21 @@
+# Frontend deployment - exclude everything except webui-react
+api/
+server/
+MAVProxy/
+scripts/
+windows/
+shortcuts/
+.venv/
+.git/
+*.bin
+*.log
+*.pyc
+__pycache__/
+*.csv
+test.bin
+requirements.txt
+setup.py
+run_backend.py
+run_local_dev.sh
+start_webui.sh
+stop_webui.sh
