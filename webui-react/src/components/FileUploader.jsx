@@ -1,6 +1,6 @@
 import React, {useState} from 'react'
 
-export default function FileUploader({onUpload, loading}){
+export default function FileUploader({onUpload, loading, disabled=false}){
   const [file, setFile] = useState(null)
   const [options, setOptions] = useState({})
   const [error, setError] = useState(null)
@@ -53,7 +53,7 @@ export default function FileUploader({onUpload, loading}){
           <input type="checkbox" checked={bypass} onChange={e=>setBypass(e.target.checked)} />
           <span style={{fontSize:12}}>Bypass proxy (direct to backend)</span>
         </label>
-        <button className="btn" type="submit" disabled={loading || !file}>{loading? 'Analyzing...':'Analyze'}</button>
+        <button className="btn" type="submit" disabled={loading || !file || disabled} title={disabled ? "Select a profile first" : ""}>{loading? 'Analyzing...':'Analyze'}</button>
       </div>
     </form>
   )

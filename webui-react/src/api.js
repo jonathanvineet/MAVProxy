@@ -51,10 +51,11 @@ async function compressFile(file) {
  * @param {Blob} blob - The blob to upload (compressed or uncompressed)
  * @param {string} filename - Original filename
  * @param {number} originalSize - Original uncompressed size
+ * @param {string} profileId - Profile ID for storing analysis
  * @param {Function} onUploadProgress - Progress callback
  * @returns {Promise<{token: string, analysis: object}>}
  */
-async function uploadInChunks(blob, filename, originalSize, onUploadProgress = null) {
+async function uploadInChunks(blob, filename, originalSize, profileId = null, onUploadProgress = null) {
   const totalChunks = Math.ceil(blob.size / CHUNK_SIZE)
   const uploadId = Date.now().toString(36) + Math.random().toString(36).substr(2)
   
@@ -76,6 +77,9 @@ async function uploadInChunks(blob, filename, originalSize, onUploadProgress = n
     fd.append('original_filename', filename)
     fd.append('original_size', originalSize.toString())
     fd.append('total_size', blob.size.toString())
+    if (profileId) {
+      fd.append('profile_id', profileId)
+    }
     
     console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunks} (${(chunk.size / 1024).toFixed(1)}KB)`)
     
@@ -113,7 +117,7 @@ async function uploadInChunks(blob, filename, originalSize, onUploadProgress = n
 }
 
 export default {
-  uploadFile: async (file, options={}, onUploadProgress=null) => {
+  uploadFile: async (file, options={}, onUploadProgress=null, profileId=null) => {
     try {
       // Compress the file first
       const { blob: compressedBlob, originalSize, compressedSize } = await compressFile(file)
@@ -121,7 +125,7 @@ export default {
       console.log(`File compression complete: ${(originalSize / 1024 / 1024).toFixed(1)}MB -> ${(compressedSize / 1024 / 1024).toFixed(1)}MB`)
       
       // Upload in chunks (handles any size)
-      const result = await uploadInChunks(compressedBlob, file.name, originalSize, onUploadProgress)
+      const result = await uploadInChunks(compressedBlob, file.name, originalSize, profileId, onUploadProgress)
       
       // Wrap result in axios-compatible format
       return { data: result }
@@ -174,5 +178,34 @@ export default {
   },
   dumpMessages: (token, type, limit=100) => {
     return client.get('/dump', { params: { token, type, limit } })
+  },
+  
+  // Profile Management
+  getProfiles: () => {
+    return client.get('/profiles')
+  },
+  getProfile: (profileId) => {
+    return client.get(`/profiles/${profileId}`)
+  },
+  createProfile: (profileData) => {
+    return client.post('/profiles', profileData)
+  },
+  updateProfile: (profileId, profileData) => {
+    return client.put(`/profiles/${profileId}`, profileData)
+  },
+  deleteProfile: (profileId) => {
+    return client.delete(`/profiles/${profileId}`)
+  },
+  
+  // Analysis Results
+  getAnalysisResults: (profileId) => {
+    return client.get(`/profiles/${profileId}/analysis`)
+  },
+  getAnalysisResult: (resultId) => {
+    return client.get(`/analysis/${resultId}`)
+  },
+  deleteAnalysisResult: (resultId) => {
+    return client.delete(`/analysis/${resultId}`)
   }
 }
+

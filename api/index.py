@@ -6,9 +6,16 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Add parent directory to path so imports work
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Load environment variables
+load_dotenv()
+
+# Add parent directory and current directory to path so imports work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, current_dir)
+sys.path.insert(0, parent_dir)
 
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
@@ -26,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 # Import the analysis API
 import mavexplorer_api
+
+# Import Supabase manager
+from supabase_client import supabase_manager
 
 try:
     from pymavlink import mavutil
@@ -86,6 +96,65 @@ CHUNK_UPLOADS = {}
 def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok'})
+
+# ===== Profile Endpoints =====
+
+@app.route('/profiles', methods=['GET', 'OPTIONS'])
+@app.route('/api/profiles', methods=['GET', 'OPTIONS'])
+def get_profiles():
+    """Get all profiles for a user"""
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    
+    profiles = supabase_manager.get_user_profiles(user_id)
+    return jsonify({'profiles': profiles})
+
+@app.route('/profiles', methods=['POST', 'OPTIONS'])
+@app.route('/api/profiles', methods=['POST', 'OPTIONS'])
+def create_profile():
+    """Create a new profile"""
+    data = request.get_json()
+    user_id = data.get('user_id')
+    name = data.get('name')
+    description = data.get('description', '')
+    
+    if not user_id or not name:
+        return jsonify({'error': 'user_id and name required'}), 400
+    
+    profile = supabase_manager.create_profile(user_id, name, description)
+    if profile:
+        return jsonify({'profile': profile})
+    else:
+        return jsonify({'error': 'failed to create profile'}), 500
+
+@app.route('/profiles/<profile_id>', methods=['GET', 'OPTIONS'])
+@app.route('/api/profiles/<profile_id>', methods=['GET', 'OPTIONS'])
+def get_profile_detail(profile_id):
+    """Get a specific profile"""
+    profile = supabase_manager.get_profile(profile_id)
+    if profile:
+        return jsonify({'profile': profile})
+    else:
+        return jsonify({'error': 'profile not found'}), 404
+
+@app.route('/profiles/<profile_id>', methods=['DELETE', 'OPTIONS'])
+@app.route('/api/profiles/<profile_id>', methods=['DELETE', 'OPTIONS'])
+def delete_profile_endpoint(profile_id):
+    """Delete a profile"""
+    success = supabase_manager.delete_profile(profile_id)
+    if success:
+        return jsonify({'status': 'deleted'})
+    else:
+        return jsonify({'error': 'failed to delete profile'}), 500
+
+@app.route('/profiles/<profile_id>/analyses', methods=['GET', 'OPTIONS'])
+@app.route('/api/profiles/<profile_id>/analyses', methods=['GET', 'OPTIONS'])
+def get_profile_analyses(profile_id):
+    """Get all analyses for a profile"""
+    analyses = supabase_manager.get_analysis_results(profile_id)
+    return jsonify({'analyses': analyses})
+
 
 @app.route('/upload_chunk', methods=['POST', 'OPTIONS'])
 @app.route('/api/upload_chunk', methods=['POST', 'OPTIONS'])
@@ -169,14 +238,40 @@ def upload_chunk():
                 logger.error(f"Failed to analyze file: {e}", exc_info=True)
                 return jsonify({'error': 'failed to parse log: ' + str(e)}), 500
             
-            # Store results
+            # Store results in memory and Supabase
             token = str(uuid.uuid4())
             UPLOADS[token] = {'tmpdir': tmpdir, 'path': decompressed_path, 'analysis': out}
+            
+            # Save to Supabase if profile_id is provided
+            profile_id = request.form.get('profile_id')
+            analysis_db_id = None
+            
+            if profile_id and supabase_manager.enabled:
+                try:
+                    analysis_result = supabase_manager.save_analysis_result(
+                        profile_id=profile_id,
+                        filename=original_filename,
+                        file_size=os.path.getsize(compressed_path) if os.path.exists(compressed_path) else total_size,
+                        original_size=original_size,
+                        analysis_data=out
+                    )
+                    if analysis_result:
+                        analysis_db_id = analysis_result.get('id')
+                        logger.info(f"Analysis saved to Supabase: {analysis_db_id}")
+                except Exception as e:
+                    logger.error(f"Failed to save to Supabase: {e}")
             
             # Clean up chunk upload tracking
             del CHUNK_UPLOADS[upload_id]
             
-            return jsonify({'token': token, 'analysis': out})
+            response_data = {
+                'token': token, 
+                'analysis': out,
+                'profile_id': profile_id,
+                'analysis_db_id': analysis_db_id
+            }
+            
+            return jsonify(response_data)
             
         except Exception as e:
             logger.error(f"Failed to process chunks: {e}", exc_info=True)
@@ -344,7 +439,12 @@ def graphs():
         defs = mavexplorer_api.load_graph_definitions()
         out = []
         for g in defs:
-            out.append({'name': g.name, 'expressions': g.expressions, 'filename': g.filename})
+            out.append({
+                'name': g.name,
+                'description': g.description if hasattr(g, 'description') else '',
+                'expressions': g.expressions,
+                'filename': g.filename if hasattr(g, 'filename') else ''
+            })
         return jsonify({'graphs': out})
     except Exception as e:
         logger.error(f"Failed to load graphs: {e}", exc_info=True)
@@ -493,6 +593,36 @@ def get_params():
     except Exception as e:
         logger.error(f"Failed to extract params: {e}", exc_info=True)
         return jsonify({'error': 'failed to extract params: ' + str(e)}), 500
+
+@app.route('/flight_modes', methods=['GET'])
+@app.route('/api/flight_modes', methods=['GET'])
+def get_flight_modes():
+    """Extract flight mode changes from the log."""
+    token = request.args.get('token')
+    if not token or token not in UPLOADS:
+        return jsonify({'error': 'valid token required'}), 400
+    
+    path = UPLOADS[token]['path']
+    try:
+        mlog = mavutil.mavlink_connection(path)
+        
+        # Get the flight mode list using mavutil's built-in method
+        flightmodes = mlog.flightmode_list()
+        
+        # Convert to our format: [(mode_name, start_time, end_time), ...]
+        modes = []
+        for (mode_name, t1, t2) in flightmodes:
+            modes.append({
+                'mode': mode_name,
+                'start': t1,
+                'end': t2,
+                'duration': t2 - t1
+            })
+        
+        return jsonify({'modes': modes})
+    except Exception as e:
+        logger.error(f"Failed to extract flight modes: {e}", exc_info=True)
+        return jsonify({'error': 'failed to extract flight modes: ' + str(e)}), 500
 
 # Export the Flask app for Vercel
 # Vercel's Python runtime expects a variable named 'app' or a function named 'handler'

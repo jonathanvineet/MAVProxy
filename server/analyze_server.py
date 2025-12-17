@@ -311,25 +311,20 @@ def get_flight_modes():
     
     path = UPLOADS[token]['path']
     try:
-        modes = []
         mlog = mavutil.mavlink_connection(path)
         
-        # Try to get mode from MODE message or HEARTBEAT
-        while True:
-            m = mlog.recv_match(type=['MODE', 'HEARTBEAT'])
-            if m is None:
-                break
-            t = getattr(m, '_timestamp', None)
-            mode_name = None
-            
-            if m.get_type() == 'MODE':
-                mode_name = getattr(m, 'Mode', None)
-            elif m.get_type() == 'HEARTBEAT':
-                # Try to interpret mode from custom_mode
-                mode_name = getattr(m, 'custom_mode', None)
-            
-            if t and mode_name is not None:
-                modes.append({'timestamp': t, 'mode': mode_name})
+        # Get the flight mode list using mavutil's built-in method
+        flightmodes = mlog.flightmode_list()
+        
+        # Convert to our format: [(mode_name, start_time, end_time), ...]
+        modes = []
+        for (mode_name, t1, t2) in flightmodes:
+            modes.append({
+                'mode': mode_name,
+                'start': t1,
+                'end': t2,
+                'duration': t2 - t1
+            })
         
         return jsonify({'modes': modes})
     except Exception as e:

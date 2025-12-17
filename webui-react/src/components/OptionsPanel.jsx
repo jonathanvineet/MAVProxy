@@ -1,4 +1,6 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
+import GraphMenuDialog from './GraphMenuDialog'
+import api from '../api'
 
 function humanizeKey(key){
   if(!key) return ''
@@ -7,7 +9,16 @@ function humanizeKey(key){
   return s.split(' ').map(w => w.length ? (w[0].toUpperCase() + w.slice(1)) : '').join(' ')
 }
 
-export default function OptionsPanel({analysis, token, selected, onSelect}){
+export default function OptionsPanel({analysis, token, selected, onSelect, onSelectPredefinedGraph}){
+  const [showGraphMenu, setShowGraphMenu] = useState(false)
+  const [graphs, setGraphs] = useState([])
+  
+  useEffect(() => {
+    api.listGraphs()
+      .then(res => setGraphs(res.data.graphs || []))
+      .catch(err => console.error('Failed to load graphs:', err))
+  }, [])
+  
   if(!analysis) return <div>No analysis yet. Upload a .bin file to start.</div>
 
   const msgs = Object.keys(analysis.messages || {})
@@ -41,6 +52,8 @@ export default function OptionsPanel({analysis, token, selected, onSelect}){
     onSelect({...selected, field:e.target.value})
   }
 
+  const fields = analysis.messages[selected.msg]?.fields || []
+
   return (
     <div>
       <div style={{marginBottom:8}}><strong>Message</strong></div>
@@ -53,15 +66,36 @@ export default function OptionsPanel({analysis, token, selected, onSelect}){
 
       <div style={{marginTop:10}}><strong>Field</strong></div>
       <select value={selected.field || ''} onChange={changeField} style={{width:'100%'}}>
-        {(analysis.messages[selected.msg]?.fields || []).map(f=> {
+        <option value="All">All — All</option>
+        {fields.map(f=> {
           const label = FIELD_FULL[f] || humanizeKey(f)
           return <option key={f} value={f}>{f + (label ? ` — ${label}` : '')}</option>
         })}
       </select>
 
-      <div style={{marginTop:10}}>
+      <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:8}}>
+        <button 
+          className="btn" 
+          onClick={() => setShowGraphMenu(true)}
+          style={{width:'100%'}}
+        >
+          Browse Predefined Graphs
+        </button>
         <a className="btn" href={`/api/download?token=${encodeURIComponent(token||'')}&msg=${encodeURIComponent(selected.msg||'')}`}>Download CSV</a>
       </div>
+      
+      {showGraphMenu && (
+        <GraphMenuDialog 
+          graphs={graphs}
+          onClose={() => setShowGraphMenu(false)}
+          onSelectGraph={(graph) => {
+            if (onSelectPredefinedGraph) {
+              onSelectPredefinedGraph(graph)
+            }
+            setShowGraphMenu(false)
+          }}
+        />
+      )}
     </div>
   )
 }
