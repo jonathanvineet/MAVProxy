@@ -5,21 +5,33 @@
       "src": "index.py",
       "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "50mb"
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.12"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "index.py"
+      "dest": "index.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS,PUT,DELETE,PATCH",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization"
+      }
     },
     {
       "src": "/(.*)",
-      "dest": "index.py"
+      "dest": "index.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS,PUT,DELETE,PATCH",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization"
+      }
     }
   ],
   "env": {
     "PYTHON_VERSION": "3.12"
   }
 }
+

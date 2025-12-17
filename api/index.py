@@ -45,33 +45,54 @@ except Exception as e:
 
 # Create Flask app
 app = Flask(__name__)
+
 # Vercel has a 4.5MB payload limit for serverless functions
 # Set max content length to 4MB to stay safe
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
 
-# Enable CORS
+# Enable CORS with explicit configuration
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
-except:
-    pass
+    # Allow all origins for now (can be restricted later)
+    CORS(app, 
+         resources={r"/*": {
+             "origins": "*",
+             "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
+             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+             "supports_credentials": True,
+             "max_age": 3600
+         }},
+         send_wildcard=True,
+         automatic_options=True
+    )
+except ImportError:
+    logger.warning("flask_cors not available, CORS may not work properly")
 
+# Explicit CORS handling for all requests
 @app.before_request
 def handle_preflight():
+    """Handle CORS preflight requests"""
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = '*'
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
         response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+        response.headers['Access-Control-Allow-Headers'] = request.headers.get('Access-Control-Request-Headers', 'Content-Type,Authorization')
         response.headers['Access-Control-Max-Age'] = '3600'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.status_code = 200
         return response
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = '*'
+    """Add CORS headers to all responses"""
+    origin = request.headers.get('Origin', '*')
+    response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-Requested-With'
     response.headers['Access-Control-Max-Age'] = '3600'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Vary'] = 'Origin'
+    
     # Prevent caching of error responses
     if response.status_code >= 400:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -625,5 +646,9 @@ def get_flight_modes():
         return jsonify({'error': 'failed to extract flight modes: ' + str(e)}), 500
 
 # Export the Flask app for Vercel
-# Vercel's Python runtime expects a variable named 'app' or a function named 'handler'
-app = app
+# Vercel's Python runtime expects a variable named 'app'
+# The app is already configured with CORS and request handlers above
+
+# For Vercel serverless compatibility
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5001)
