@@ -362,8 +362,8 @@ def analyze():
     UPLOADS[token] = {'tmpdir': tmpdir, 'path': path, 'analysis': out}
     return jsonify({'token': token, 'analysis': out})
 
-@app.route('/download', methods=['GET'])
-@app.route('/api/download', methods=['GET'])
+@app.route('/download', methods=['GET', 'OPTIONS'])
+@app.route('/api/download', methods=['GET', 'OPTIONS'])
 def download():
     """Generate and download CSV for a specific message type."""
     token = request.args.get('token')
@@ -411,8 +411,8 @@ def download():
         download_name=f'{msg}.csv'
     )
 
-@app.route('/timeseries', methods=['GET'])
-@app.route('/api/timeseries', methods=['GET'])
+@app.route('/timeseries', methods=['GET', 'OPTIONS'])
+@app.route('/api/timeseries', methods=['GET', 'OPTIONS'])
 def timeseries():
     """Return timeseries for a given message type and field."""
     token = request.args.get('token')
@@ -452,8 +452,8 @@ def timeseries():
     
     return jsonify({'msg': msg, 'field': field, 'series': series})
 
-@app.route('/graphs', methods=['GET'])
-@app.route('/api/graphs', methods=['GET'])
+@app.route('/graphs', methods=['GET', 'OPTIONS'])
+@app.route('/api/graphs', methods=['GET', 'OPTIONS'])
 def graphs():
     """Return list of predefined graphs."""
     try:
@@ -471,8 +471,8 @@ def graphs():
         logger.error(f"Failed to load graphs: {e}", exc_info=True)
         return jsonify({'error': 'failed to load graphs: ' + str(e)}), 500
 
-@app.route('/graph', methods=['GET'])
-@app.route('/api/graph', methods=['GET'])
+@app.route('/graph', methods=['GET', 'OPTIONS'])
+@app.route('/api/graph', methods=['GET', 'OPTIONS'])
 def graph_eval():
     """Evaluate a predefined graph against an uploaded file."""
     token = request.args.get('token')
