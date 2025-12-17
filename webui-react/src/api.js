@@ -3,7 +3,9 @@ import axios from 'axios'
 // Use environment variable for API URL in production, localhost in development
 const getAPIBaseURL = () => {
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL
+    // Add /api to the URL if not already present
+    const url = import.meta.env.VITE_API_URL
+    return url.endsWith('/api') ? url : url + '/api'
   }
   // Fallback for development
   if (typeof window !== 'undefined' && !window.location.origin.includes('localhost')) {
