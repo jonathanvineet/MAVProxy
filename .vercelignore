@@ -1,21 +1,38 @@
-# Frontend deployment - exclude everything except webui-react
+# Exclude backend API directory (deployed separately)
 api/
-server/
+
+# Standard exclusions
+node_modules
+.venv
+.git
+.github
+.DS_Store
+*.pyc
+__pycache__
+.vercel
+.pytest_cache
+.coverage
+*.egg-info
+dist
+build
+.env
+.env.local
+.env.*.local
+
+# Exclude MAVProxy source (not needed for frontend)
 MAVProxy/
+server/
 scripts/
+docs/
 windows/
 shortcuts/
-.venv/
-.git/
-*.bin
-*.log
-*.pyc
-__pycache__/
-*.csv
 test.bin
-requirements.txt
-setup.py
+*.log
+*.csv
 run_backend.py
 run_local_dev.sh
 start_webui.sh
 stop_webui.sh
+setup.py
+requirements.txt
+supabase_schema.sql

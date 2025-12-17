@@ -45,7 +45,6 @@ except Exception as e:
 
 # Create Flask app
 app = Flask(__name__)
-
 # Vercel has a 4.5MB payload limit for serverless functions
 # Set max content length to 4MB to stay safe
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
@@ -75,7 +74,7 @@ def add_cors_headers(response):
     response.headers['Access-Control-Max-Age'] = '3600'
     # Prevent caching of error responses
     if response.status_code >= 400:
-        response.headers['Cache-Control'] = 'no-Cache, no-cache, must-revalidate, max-age=0'
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     return response
@@ -157,8 +156,8 @@ def get_profile_analyses(profile_id):
     return jsonify({'analyses': analyses})
 
 
-@app.route('/upload_chunk', methods=['POST'])
-@app.route('/api/upload_chunk', methods=['POST'])
+@app.route('/upload_chunk', methods=['POST', 'OPTIONS'])
+@app.route('/api/upload_chunk', methods=['POST', 'OPTIONS'])
 def upload_chunk():
     """Handle chunked file uploads."""
     if 'file' not in request.files:
@@ -287,8 +286,8 @@ def upload_chunk():
     })
 
 
-@app.route('/analyze', methods=['POST'])
-@app.route('/api/analyze', methods=['POST'])
+@app.route('/analyze', methods=['POST', 'OPTIONS'])
+@app.route('/api/analyze', methods=['POST', 'OPTIONS'])
 def analyze():
     """Analyze uploaded MAVLink log file."""
     if 'file' not in request.files:
@@ -626,9 +625,5 @@ def get_flight_modes():
         return jsonify({'error': 'failed to extract flight modes: ' + str(e)}), 500
 
 # Export the Flask app for Vercel
-# Vercel's Python runtime expects a variable named 'app'
-# The app is already configured with CORS and request handlers above
-
-# For Vercel serverless compatibility
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+# Vercel's Python runtime expects a variable named 'app' or a function named 'handler'
+app = app

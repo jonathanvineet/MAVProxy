@@ -1,5 +1,6 @@
-Flask==3.0.0
-pymavlink==2.4.41
-Flask-Cors==4.0.0
-werkzeug==3.0.1
-python-dotenv==1.0.0
+Flask>=2.0
+pymavlink
+Flask-Cors
+werkzeug
+python-dotenv
+requests
