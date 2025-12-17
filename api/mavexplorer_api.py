@@ -15,10 +15,41 @@ class GraphDefinition:
         self.filename = filename
 
 def load_graph_definitions():
-    """Load predefined graphs - returns empty list in serverless environment"""
-    # In Vercel serverless environment, we don't have access to MAVProxy graph files
-    # Return empty list - users can still use custom graphs
-    return []
+    """Load predefined graphs - basic definitions for serverless environment"""
+    # Since we don't have access to MAVProxy graph files, define basic graphs here
+    graphs = [
+        GraphDefinition(
+            'Attitude',
+            'ATT.Roll ATT.Pitch ATT.Yaw',
+            'Aircraft attitude (roll, pitch, yaw)',
+            ['ATT.Roll', 'ATT.Pitch', 'ATT.Yaw']
+        ),
+        GraphDefinition(
+            'GPS Position',
+            'GPS.Lat GPS.Lng GPS.Alt',
+            'GPS position (latitude, longitude, altitude)',
+            ['GPS.Lat', 'GPS.Lng', 'GPS.Alt']
+        ),
+        GraphDefinition(
+            'Battery',
+            'BAT.Volt BAT.Curr BAT.CurrTot',
+            'Battery voltage, current, and total current',
+            ['BAT.Volt', 'BAT.Curr', 'BAT.CurrTot']
+        ),
+        GraphDefinition(
+            'Altitude',
+            'GPS.Alt BARO.Alt',
+            'GPS and barometric altitude',
+            ['GPS.Alt', 'BARO.Alt']
+        ),
+        GraphDefinition(
+            'Velocity',
+            'GPS.Spd GPS.GCrs',
+            'GPS speed and ground course',
+            ['GPS.Spd', 'GPS.GCrs']
+        ),
+    ]
+    return graphs
 
 
 def analyze_file_basic(path):
