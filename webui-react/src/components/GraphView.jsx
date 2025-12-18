@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart, registerables } from 'chart.js'
 import annotationPlugin from 'chartjs-plugin-annotation'
@@ -22,13 +22,40 @@ const FLIGHT_MODE_COLORS = {
   'CRUISE': 'rgba(255, 250, 205, 0.3)',       // Lemon chiffon
 }
 
+// X-axis interval options (in seconds)
+const X_INTERVALS = [
+  { label: 'All Data', value: null },
+  { label: '10 seconds', value: 10 },
+  { label: '30 seconds', value: 30 },
+  { label: '1 minute', value: 60 },
+  { label: '2 minutes', value: 120 },
+  { label: '5 minutes', value: 300 },
+  { label: '10 minutes', value: 600 },
+  { label: '30 minutes', value: 1800 },
+]
+
+// Y-axis interval options (auto or specific ranges)
+const Y_INTERVALS = [
+  { label: 'Auto Range', value: null },
+  { label: '±10', value: { min: -10, max: 10 } },
+  { label: '±50', value: { min: -50, max: 50 } },
+  { label: '±100', value: { min: -100, max: 100 } },
+  { label: '±180', value: { min: -180, max: 180 } },
+  { label: '0 to 100', value: { min: 0, max: 100 } },
+  { label: '0 to 1000', value: { min: 0, max: 1000 } },
+  { label: '0 to 5000', value: { min: 0, max: 5000 } },
+]
+
 export default function GraphView({analysis, token, selected, predefinedGraph}){
   const [seriesData, setSeriesData] = useState({})
   const [loading, setLoading] = useState(false)
   const [flightModes, setFlightModes] = useState([])
   const [showFlightModes, setShowFlightModes] = useState(true)
+  const [showFlightModeLegend, setShowFlightModeLegend] = useState(true)
   const [decimate, setDecimate] = useState(1)
   const [fullscreen, setFullscreen] = useState(false)
+  const [xInterval, setXInterval] = useState(null)
+  const [yInterval, setYInterval] = useState(null)
   const chartRef = useRef(null)
 
   // Load predefined graph
@@ -193,14 +220,37 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     })
   }
   
+  // Calculate filtered data based on x-axis interval
+  const filteredData = useMemo(() => {
+    if (!xInterval || labels.length === 0) return { labels, datasets }
+    
+    // Get the last timestamp and calculate the start of the interval
+    const maxTime = Math.max(...labels)
+    const minTime = maxTime - xInterval
+    
+    // Filter labels and datasets
+    const filteredLabels = labels.filter(t => t >= minTime)
+    const startIdx = labels.indexOf(filteredLabels[0])
+    
+    const filteredDatasets = datasets.map(ds => ({
+      ...ds,
+      data: ds.data.slice(startIdx)
+    }))
+    
+    return { labels: filteredLabels, datasets: filteredDatasets }
+  }, [labels, datasets, xInterval])
+
   const data = { 
-    labels, 
-    datasets
+    labels: filteredData.labels, 
+    datasets: filteredData.datasets
   }
 
-  const options = {
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
+    animation: {
+      duration: 300
+    },
     interaction: {
       mode: 'nearest',
       axis: 'x',
@@ -212,7 +262,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         title: { 
           display: true, 
           text: 'Time (s)',
-          font: { size: 12 }
+          font: { size: 12, weight: 'bold' },
+          color: '#333'
         },
         grid: {
           display: true,
@@ -220,6 +271,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         },
         ticks: {
           font: { size: 11 },
+          color: '#333',
           maxTicksLimit: 12,
           callback: function(value) {
             const date = new Date(value * 1000)
@@ -231,15 +283,19 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         title: { 
           display: true, 
           text: 'Value',
-          font: { size: 12 }
+          font: { size: 12, weight: 'bold' },
+          color: '#333'
         },
         grid: {
           display: true,
           color: 'rgba(0, 0, 0, 0.1)'
         },
         ticks: {
-          font: { size: 11 }
-        }
+          font: { size: 11 },
+          color: '#333'
+        },
+        min: yInterval?.min,
+        max: yInterval?.max
       }
     },
     plugins: {
@@ -293,30 +349,93 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         enabled: true,
         mode: 'index',
         intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        titleFont: { size: 12 },
-        bodyFont: { size: 11 },
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        titleColor: '#000',
+        bodyColor: '#000',
+        borderColor: '#333',
+        borderWidth: 2,
+        padding: 12,
+        titleFont: { size: 13, weight: 'bold' },
+        bodyFont: { size: 12 },
+        bodySpacing: 6,
         callbacks: {
           title: function(context) {
             const index = context[0].dataIndex
-            const time = labels[index]
+            const time = filteredData.labels[index]
             const date = new Date(time * 1000)
-            return date.toLocaleTimeString()
+            
+            // Find current flight mode at this time
+            let currentMode = null
+            if (showFlightModes && flightModes.length > 0) {
+              for (const fm of flightModes) {
+                if (time >= fm.start && time <= fm.end) {
+                  currentMode = fm.mode
+                  break
+                }
+              }
+            }
+            
+            const timeStr = date.toLocaleTimeString()
+            return currentMode ? `${timeStr} - Mode: ${currentMode}` : timeStr
           },
           label: function(context) {
             const label = context.dataset.label || ''
             const value = context.parsed.y
-            return `${label}: ${value.toFixed(2)}`
+            return ` ${label}: ${value !== null ? value.toFixed(3) : 'N/A'}`
+          },
+          labelTextColor: function(context) {
+            return context.dataset.borderColor
           }
         }
       }
     }
-  }
+  }), [annotations, filteredData.labels, showFlightModes, flightModes, yInterval])
 
-  const handleResetZoom = () => {
+  const handleResetZoom = useCallback(() => {
     if (chartRef.current) {
       chartRef.current.resetZoom()
     }
+  }, [])
+  
+  // Get unique flight modes that appear in the data
+  const uniqueFlightModes = useMemo(() => {
+    const modes = new Set()
+    flightModes.forEach(fm => modes.add(fm.mode))
+    return Array.from(modes).sort()
+  }, [flightModes])
+  
+  // Flight Mode Legend Component
+  const FlightModeLegend = () => {
+    if (!showFlightModeLegend || uniqueFlightModes.length === 0) return null
+    
+    return (
+      <div style={{
+        background: 'rgba(255, 255, 255, 0.95)',
+        border: '1px solid #ccc',
+        borderRadius: 4,
+        padding: '8px 12px',
+        fontSize: 11,
+        marginTop: 8,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px 16px',
+        alignItems: 'center'
+      }}>
+        <strong style={{ fontSize: 12, marginRight: 4 }}>Flight Modes:</strong>
+        {uniqueFlightModes.map(mode => (
+          <div key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 20,
+              height: 14,
+              background: FLIGHT_MODE_COLORS[mode] || 'rgba(200, 200, 200, 0.3)',
+              border: '1px solid #999',
+              borderRadius: 2
+            }} />
+            <span style={{ fontWeight: '500' }}>{mode}</span>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   const renderChart = (isFullscreen = false) => (
@@ -356,11 +475,53 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h4 style={{ margin: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 12 }}>
+          <h4 style={{ margin: 0, paddingTop: 6 }}>
             {predefinedGraph ? predefinedGraph.name : `${selected.msg} · ${selected.field === 'All' ? 'All Fields' : selected.field}`}
           </h4>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* X-Axis Interval Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: '600', color: '#333' }}>X-Axis:</label>
+              <select
+                value={xInterval || ''}
+                onChange={(e) => setXInterval(e.target.value ? Number(e.target.value) : null)}
+                style={{
+                  fontSize: 11,
+                  padding: '4px 8px',
+                  border: '1px solid #ccc',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  background: 'white'
+                }}
+              >
+                {X_INTERVALS.map(opt => (
+                  <option key={opt.label} value={opt.value || ''}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Y-Axis Interval Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: '600', color: '#333' }}>Y-Axis:</label>
+              <select
+                value={yInterval ? JSON.stringify(yInterval) : ''}
+                onChange={(e) => setYInterval(e.target.value ? JSON.parse(e.target.value) : null)}
+                style={{
+                  fontSize: 11,
+                  padding: '4px 8px',
+                  border: '1px solid #ccc',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  background: 'white'
+                }}
+              >
+                {Y_INTERVALS.map(opt => (
+                  <option key={opt.label} value={opt.value ? JSON.stringify(opt.value) : ''}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            
             <button 
               onClick={handleResetZoom}
               style={{ 
@@ -369,24 +530,39 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
                 cursor: 'pointer',
                 background: '#f0f0f0',
                 border: '1px solid #ccc',
-                borderRadius: 3
+                borderRadius: 3,
+                fontWeight: '500'
               }}
             >
               Reset Zoom
             </button>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            
+            <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
               <input 
                 type="checkbox" 
                 checked={showFlightModes} 
                 onChange={e => setShowFlightModes(e.target.checked)}
               />
-              Show Flight Modes
+              Flight Modes
+            </label>
+            
+            <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input 
+                type="checkbox" 
+                checked={showFlightModeLegend} 
+                onChange={e => setShowFlightModeLegend(e.target.checked)}
+              />
+              Legend
             </label>
           </div>
         </div>
+        
+        {/* Flight Mode Legend */}
+        <FlightModeLegend />
+        
         {renderChart(false)}
-        <div style={{ fontSize: 11, color: '#666', marginTop: 4, textAlign: 'center' }}>
-          Scroll to zoom • Shift+drag to pan • Click legend to hide/show lines
+        <div style={{ fontSize: 11, color: '#666', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+          💡 Scroll to zoom • Shift+drag to pan • Click legend to hide/show lines • Hover for details
         </div>
       </div>
 
@@ -409,26 +585,142 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
             if (e.target === e.currentTarget) setFullscreen(false)
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, color: 'white' }}>
-            <h3 style={{ margin: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, color: 'white', gap: 12 }}>
+            <h3 style={{ margin: 0, paddingTop: 6 }}>
               {predefinedGraph ? predefinedGraph.name : `${selected.msg} · ${selected.field === 'All' ? 'All Fields' : selected.field}`}
             </h3>
-            <button 
-              onClick={() => setFullscreen(false)}
-              style={{ 
-                fontSize: 16, 
-                padding: '8px 16px',
-                cursor: 'pointer',
-                background: '#333',
-                color: 'white',
-                border: '1px solid #555',
-                borderRadius: 4
-              }}
-            >
-              ✕ Close
-            </button>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* X-Axis Interval Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: '600', color: 'white' }}>X-Axis:</label>
+                <select
+                  value={xInterval || ''}
+                  onChange={(e) => setXInterval(e.target.value ? Number(e.target.value) : null)}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 8px',
+                    border: '1px solid #555',
+                    borderRadius: 3,
+                    cursor: 'pointer',
+                    background: '#333',
+                    color: 'white'
+                  }}
+                >
+                  {X_INTERVALS.map(opt => (
+                    <option key={opt.label} value={opt.value || ''}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Y-Axis Interval Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: '600', color: 'white' }}>Y-Axis:</label>
+                <select
+                  value={yInterval ? JSON.stringify(yInterval) : ''}
+                  onChange={(e) => setYInterval(e.target.value ? JSON.parse(e.target.value) : null)}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 8px',
+                    border: '1px solid #555',
+                    borderRadius: 3,
+                    cursor: 'pointer',
+                    background: '#333',
+                    color: 'white'
+                  }}
+                >
+                  {Y_INTERVALS.map(opt => (
+                    <option key={opt.label} value={opt.value ? JSON.stringify(opt.value) : ''}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <button 
+                onClick={handleResetZoom}
+                style={{ 
+                  fontSize: 11, 
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  background: '#444',
+                  color: 'white',
+                  border: '1px solid #555',
+                  borderRadius: 3,
+                  fontWeight: '500'
+                }}
+              >
+                Reset Zoom
+              </button>
+              
+              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: 'white' }}>
+                <input 
+                  type="checkbox" 
+                  checked={showFlightModes} 
+                  onChange={e => setShowFlightModes(e.target.checked)}
+                />
+                Flight Modes
+              </label>
+              
+              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: 'white' }}>
+                <input 
+                  type="checkbox" 
+                  checked={showFlightModeLegend} 
+                  onChange={e => setShowFlightModeLegend(e.target.checked)}
+                />
+                Legend
+              </label>
+              
+              <button 
+                onClick={() => setFullscreen(false)}
+                style={{ 
+                  fontSize: 14, 
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  background: '#c33',
+                  color: 'white',
+                  border: '1px solid #a22',
+                  borderRadius: 4,
+                  fontWeight: '600',
+                  marginLeft: 8
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
           </div>
+          
+          {/* Flight Mode Legend in fullscreen */}
+          {showFlightModeLegend && uniqueFlightModes.length > 0 && (
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: '1px solid #555',
+              borderRadius: 4,
+              padding: '8px 12px',
+              fontSize: 11,
+              marginBottom: 12,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px 16px',
+              alignItems: 'center'
+            }}>
+              <strong style={{ fontSize: 12, marginRight: 4 }}>Flight Modes:</strong>
+              {uniqueFlightModes.map(mode => (
+                <div key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    width: 20,
+                    height: 14,
+                    background: FLIGHT_MODE_COLORS[mode] || 'rgba(200, 200, 200, 0.3)',
+                    border: '1px solid #999',
+                    borderRadius: 2
+                  }} />
+                  <span style={{ fontWeight: '500' }}>{mode}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          
           {renderChart(true)}
+          <div style={{ fontSize: 12, color: '#aaa', marginTop: 12, textAlign: 'center', fontStyle: 'italic' }}>
+            💡 Scroll to zoom • Shift+drag to pan • Click legend to hide/show lines • Hover for details
+          </div>
         </div>
       )}
     </>
