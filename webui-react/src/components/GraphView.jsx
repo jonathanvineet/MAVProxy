@@ -243,10 +243,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     yMax = yInterval
   }
 
-  // Create options function that adapts to fullscreen mode
+  // Create options function for chart styling
   const getChartOptions = (isFullscreen = false) => {
-    const textColor = isFullscreen ? '#fff' : '#000'
-    const gridColor = isFullscreen ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'
+    const textColor = '#fff'
+    const gridColor = 'rgba(255, 255, 255, 0.15)'
     
     return {
       responsive: true,
@@ -391,18 +391,13 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     // Get unique flight modes
     const uniqueModes = [...new Set(flightModes.map(fm => fm.mode))]
     
-    const bgColor = isFullscreen ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.95)'
-    const textColor = isFullscreen ? '#fff' : '#000'
-    const borderColor = isFullscreen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'
-    const closeButtonColor = isFullscreen ? '#999' : '#666'
-    
     return (
       <div style={{
-        background: bgColor,
+        background: 'rgba(0, 0, 0, 0.85)',
         padding: '8px 12px',
         borderRadius: 6,
         marginBottom: 12,
-        border: `1px solid ${borderColor}`
+        border: '1px solid rgba(255, 255, 255, 0.2)'
       }}>
         <div style={{ 
           display: 'flex', 
@@ -410,13 +405,17 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           flexWrap: 'wrap', 
           gap: 12,
           fontSize: 11,
-          color: textColor
+          color: '#fff'
         }}>
-          <strong style={{ marginRight: 4, fontSize: 12, color: textColor }}>Flight Modes:</strong>
+          <strong style={{ marginRight: 4, fontSize: 12, color: '#fff' }}>Flight Modes:</strong>
           {uniqueModes.map(mode => {
             const color = FLIGHT_MODE_COLORS[mode] || 'rgba(200, 200, 200, 0.3)'
             // Convert rgba to solid color for legend
-            const solidColor = color.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/, 'rgb($1, $2, $3)')
+            let solidColor = color.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/, 'rgb($1, $2, $3)')
+            // Replace black color with light gray for visibility
+            if (solidColor === 'rgb(0, 0, 0)') {
+              solidColor = 'rgb(200, 200, 200)'
+            }
             
             return (
               <div key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -437,7 +436,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
               marginLeft: 'auto',
               background: 'transparent',
               border: 'none',
-              color: closeButtonColor,
+              color: '#999',
               cursor: 'pointer',
               fontSize: 16,
               padding: 0,
@@ -458,7 +457,9 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         flex: 1, 
         minHeight: isFullscreen ? '90vh' : 500,
         cursor: isFullscreen ? 'default' : 'pointer',
-        position: 'relative'
+        position: 'relative',
+        background: isFullscreen ? 'rgba(0,0,0,0.95)' : '#000',
+        borderRadius: '4px'
       }}
       onClick={() => !isFullscreen && setFullscreen(true)}
     >
@@ -472,11 +473,12 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
               position: 'absolute', 
               bottom: 8, 
               right: 8, 
-              background: 'rgba(255,255,255,0.9)', 
+              background: 'rgba(0,0,0,0.7)', 
               padding: '4px 8px', 
               borderRadius: 4,
               fontSize: 11,
-              color: '#666'
+              color: '#888',
+              border: '1px solid rgba(255,255,255,0.2)'
             }}>
               Click to expand fullscreen
             </div>
@@ -488,15 +490,15 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
 
   return (
     <>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#000', padding: '12px', borderRadius: '4px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
-          <h4 style={{ margin: 0, paddingTop: 6 }}>
+          <h4 style={{ margin: 0, paddingTop: 6, color: '#fff' }}>
             {predefinedGraph ? predefinedGraph.name : `${selected.msg} · ${selected.field === 'All' ? 'All Fields' : selected.field}`}
           </h4>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {/* X-Axis Interval Dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 12, fontWeight: '600' }}>X-Axis:</label>
+              <label style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}>X-Axis:</label>
               <select
                 value={xInterval || ''}
                 onChange={(e) => setXInterval(e.target.value ? Number(e.target.value) : null)}
@@ -520,7 +522,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
 
             {/* Y-Axis Interval Dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 12, fontWeight: '600' }}>Y-Axis:</label>
+              <label style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}>Y-Axis:</label>
               <select
                 value={yInterval || ''}
                 onChange={(e) => setYInterval(e.target.value ? Number(e.target.value) : null)}
@@ -556,7 +558,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
             >
               Reset View
             </button>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff' }}>
               <input 
                 type="checkbox" 
                 checked={showFlightModes} 
@@ -574,7 +576,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         <FlightModeLegend isFullscreen={false} />
         
         {renderChart(false)}
-        <div style={{ fontSize: 11, color: '#666', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+        <div style={{ fontSize: 11, color: '#999', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
           💡 Scroll to zoom • Shift+drag to pan • Click legend to hide/show lines • Hover for details
         </div>
       </div>
@@ -700,7 +702,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           <FlightModeLegend isFullscreen={true} />
           
           {renderChart(true)}
-          <div style={{ fontSize: 11, color: '#999', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
             💡 Scroll to zoom • Shift+drag to pan • Click legend to hide/show lines • Hover for details
           </div>
         </div>
