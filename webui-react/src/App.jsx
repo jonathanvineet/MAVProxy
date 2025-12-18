@@ -64,33 +64,32 @@ export default function App(){
       </div>
 
       <TabPanel tabs={['Graphs', 'Parameters', 'Statistics', 'Message Dump']}>
-        <div className="graphs-tab">
-          <div className="grid">
-            <div className="panel">
-              <OptionsPanel 
-                analysis={analysis} 
-                token={token} 
-                selected={selected} 
-                onSelect={(sel) => {
-                  setSelected(sel)
-                  setPredefinedGraph(null) // Clear predefined when custom selected
-                }} 
-                onSelectPredefinedGraph={(graph) => {
-                  setPredefinedGraph(graph)
-                  // Don't clear selected, keep it for switching back
-                }}
-              />
-            </div>
-            <div className="panel">
-              <div className="graphArea">
-                <GraphView 
-                  analysis={analysis} 
-                  token={token} 
-                  selected={selected} 
-                  predefinedGraph={predefinedGraph}
-                />
-              </div>
-            </div>
+        <div className="graphs-tab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {/* Options on top */}
+          <div style={{ padding: '12px', background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+            <OptionsPanel 
+              analysis={analysis} 
+              token={token} 
+              selected={selected} 
+              onSelect={(sel) => {
+                setSelected(sel)
+                setPredefinedGraph(null) // Clear predefined when custom selected
+              }} 
+              onSelectPredefinedGraph={(graph) => {
+                setPredefinedGraph(graph)
+                // Don't clear selected, keep it for switching back
+              }}
+            />
+          </div>
+          
+          {/* Graph takes remaining space */}
+          <div style={{ flex: 1, padding: '16px', overflow: 'auto' }}>
+            <GraphView 
+              analysis={analysis} 
+              token={token} 
+              selected={selected} 
+              predefinedGraph={predefinedGraph}
+            />
           </div>
         </div>
 

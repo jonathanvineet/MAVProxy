@@ -55,33 +55,37 @@ export default function OptionsPanel({analysis, token, selected, onSelect, onSel
   const fields = analysis.messages[selected.msg]?.fields || []
 
   return (
-    <div>
-      <div style={{marginBottom:8}}><strong>Message</strong></div>
-      <select value={selected.msg || ''} onChange={changeMsg} style={{width:'100%'}}>
-        {msgs.map(m=> {
-          const label = MSG_FULL[m] || humanizeKey(m)
-          return <option key={m} value={m}>{m + (label ? ` — ${label}` : '')}</option>
-        })}
-      </select>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 200px', minWidth: 150 }}>
+        <div style={{marginBottom:4, fontSize: 12, fontWeight: 'bold'}}>Message</div>
+        <select value={selected.msg || ''} onChange={changeMsg} style={{width:'100%', padding: 6}}>
+          {msgs.map(m=> {
+            const label = MSG_FULL[m] || humanizeKey(m)
+            return <option key={m} value={m}>{m + (label ? ` — ${label}` : '')}</option>
+          })}
+        </select>
+      </div>
 
-      <div style={{marginTop:10}}><strong>Field</strong></div>
-      <select value={selected.field || ''} onChange={changeField} style={{width:'100%'}}>
-        <option value="All">All — All</option>
-        {fields.map(f=> {
-          const label = FIELD_FULL[f] || humanizeKey(f)
-          return <option key={f} value={f}>{f + (label ? ` — ${label}` : '')}</option>
-        })}
-      </select>
+      <div style={{ flex: '1 1 200px', minWidth: 150 }}>
+        <div style={{marginBottom:4, fontSize: 12, fontWeight: 'bold'}}>Field</div>
+        <select value={selected.field || ''} onChange={changeField} style={{width:'100%', padding: 6}}>
+          <option value="All">All — All</option>
+          {fields.map(f=> {
+            const label = FIELD_FULL[f] || humanizeKey(f)
+            return <option key={f} value={f}>{f + (label ? ` — ${label}` : '')}</option>
+          })}
+        </select>
+      </div>
 
-      <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:8}}>
+      <div style={{ display:'flex', gap:8 }}>
         <button 
           className="btn" 
           onClick={() => setShowGraphMenu(true)}
-          style={{width:'100%'}}
+          style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}
         >
           Browse Predefined Graphs
         </button>
-        <a className="btn" href={`/api/download?token=${encodeURIComponent(token||'')}&msg=${encodeURIComponent(selected.msg||'')}`}>Download CSV</a>
+        <a className="btn" href={`/api/download?token=${encodeURIComponent(token||'')}&msg=${encodeURIComponent(selected.msg||'')}`} style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>Download CSV</a>
       </div>
       
       {showGraphMenu && (

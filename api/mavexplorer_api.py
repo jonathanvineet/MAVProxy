@@ -144,16 +144,17 @@ def evaluate_graph_on_file(graph_def, path, decimate=1):
         mlog = mavutil.mavlink_connection(path)
         
         # Evaluate each expression in the graph
+        # Each expression may contain multiple message.field pairs
         for expr in graph_def.expressions:
-            # Split expression into individual fields
-            fields = expr.strip().split()
+            if not expr or not expr.strip():
+                continue
             
-            for field_expr in fields:
-                # Skip empty strings
-                if not field_expr:
-                    continue
-                
-                # Evaluate this field
+            # Find all message.field patterns in the expression
+            msg_field_pattern = r'(\w+)\.(\w+)'
+            matches = re.findall(msg_field_pattern, expr)
+            
+            for msg_type, field in matches:
+                field_expr = f"{msg_type}.{field}"
                 series = evaluate_expression(field_expr, mlog, decimate)
                 if series:
                     result['series'][field_expr] = series
