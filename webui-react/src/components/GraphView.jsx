@@ -202,23 +202,26 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
   })
   
   // Build flight mode annotations as background regions
-  const annotations = {}
-  if (showFlightModes && flightModes.length > 0) {
-    flightModes.forEach((fm, idx) => {
-      const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-      
-      annotations[`mode-${idx}`] = {
-        type: 'box',
-        xMin: fm.start,
-        xMax: fm.end,
-        yMin: 'min',
-        yMax: 'max',
-        backgroundColor: color,
-        borderWidth: 0,
-        drawTime: 'beforeDatasetsDraw'
-      }
-    })
-  }
+  const annotations = useMemo(() => {
+    const annots = {}
+    if (showFlightModes && flightModes.length > 0) {
+      flightModes.forEach((fm, idx) => {
+        const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+        
+        annots[`mode-${idx}`] = {
+          type: 'box',
+          xMin: fm.start,
+          xMax: fm.end,
+          yMin: 'min',
+          yMax: 'max',
+          backgroundColor: color,
+          borderWidth: 0,
+          drawTime: 'beforeDatasetsDraw'
+        }
+      })
+    }
+    return annots
+  }, [showFlightModes, flightModes])
   
   // Calculate filtered data based on x-axis interval
   const filteredData = useMemo(() => {
@@ -240,10 +243,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     return { labels: filteredLabels, datasets: filteredDatasets }
   }, [labels, datasets, xInterval])
 
-  const data = { 
+  const data = useMemo(() => ({ 
     labels: filteredData.labels, 
     datasets: filteredData.datasets
-  }
+  }), [filteredData])
 
   const options = useMemo(() => ({
     responsive: true,
@@ -361,17 +364,16 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         callbacks: {
           title: function(context) {
             const index = context[0].dataIndex
-            const time = filteredData.labels[index]
+            const chart = context[0].chart
+            const time = chart.data.labels[index]
             const date = new Date(time * 1000)
             
             // Find current flight mode at this time
             let currentMode = null
-            if (showFlightModes && flightModes.length > 0) {
-              for (const fm of flightModes) {
-                if (time >= fm.start && time <= fm.end) {
-                  currentMode = fm.mode
-                  break
-                }
+            for (const fm of flightModes) {
+              if (time >= fm.start && time <= fm.end) {
+                currentMode = fm.mode
+                break
               }
             }
             
@@ -389,7 +391,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         }
       }
     }
-  }), [annotations, filteredData.labels, showFlightModes, flightModes, yInterval])
+  }), [annotations, showFlightModes, flightModes, yInterval])
 
   const handleResetZoom = useCallback(() => {
     if (chartRef.current) {
