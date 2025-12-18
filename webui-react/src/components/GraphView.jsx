@@ -423,10 +423,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
                   width: 20,
                   height: 12,
                   backgroundColor: solidColor,
-                  border: `1px solid ${isFullscreen ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)'}`,
+                  border: '1px solid rgba(255, 255, 255, 0.4)',
                   borderRadius: 2
                 }} />
-                <span style={{ color: textColor, fontWeight: 500 }}>{mode}</span>
+                <span style={{ color: '#fff', fontWeight: 500 }}>{mode}</span>
               </div>
             )
           })}

@@ -50,23 +50,23 @@ export default function App(){
   }
 
   return (
-    <div className="app">
-      <div className="header">
-        <h2>MAVExplorer WebUI</h2>
-        <div>Complete MAVLink log analysis and visualization tool</div>
+    <div className="app" style={{ background: '#000', minHeight: '100vh', color: '#fff' }}>
+      <div className="header" style={{ color: '#fff' }}>
+        <h2 style={{ color: '#fff' }}>MAVExplorer WebUI</h2>
+        <div style={{ color: '#999' }}>Complete MAVLink log analysis and visualization tool</div>
       </div>
 
-      <div className="upload-section" style={{marginBottom: 16}}>
+      <div className="upload-section" style={{marginBottom: 16, background: '#1a1a1a', border: '1px solid #333', color: '#fff'}}>
         {/* Profile integration temporarily disabled */}
         {/* <ProfileManager onProfileSelect={setSelectedProfile} selectedProfile={selectedProfile} /> */}
-        {error && <div style={{color:'crimson', marginBottom:8}}>{error}</div>}
+        {error && <div style={{color:'#ff6b6b', marginBottom:8}}>{error}</div>}
         <FileUploader onUpload={handleUpload} loading={loading} disabled={false} />
       </div>
 
       <TabPanel tabs={['Graphs', 'Parameters', 'Statistics', 'Message Dump']}>
         <div className="graphs-tab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Options on top */}
-          <div style={{ padding: '12px', background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+          <div style={{ padding: '12px', background: '#1a1a1a', borderBottom: '1px solid #333' }}>
             <OptionsPanel 
               analysis={analysis} 
               token={token} 
@@ -83,7 +83,7 @@ export default function App(){
           </div>
           
           {/* Graph takes remaining space */}
-          <div style={{ flex: 1, padding: '16px', overflow: 'auto' }}>
+          <div style={{ flex: 1, padding: '16px', overflow: 'auto', background: '#000' }}>
             <GraphView 
               analysis={analysis} 
               token={token} 
