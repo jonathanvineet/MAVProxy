@@ -8,18 +8,18 @@ import api from '../api'
 
 // Flight mode colors matching desktop MAVExplorer - solid colors for regions
 const FLIGHT_MODE_COLORS = {
-  'UNKNOWN': 'rgba(255, 192, 203, 0.3)',      // Light pink
-  'MANUAL': 'rgba(144, 238, 144, 0.3)',       // Light green
-  'RTL': 'rgba(173, 216, 230, 0.3)',          // Light blue  
-  'AUTO': 'rgba(176, 224, 230, 0.3)',         // Powder blue
-  'GUIDED': 'rgba(221, 160, 221, 0.3)',       // Plum
-  'LOITER': 'rgba(255, 255, 224, 0.3)',       // Light yellow
-  'STABILIZE': 'rgba(255, 228, 196, 0.3)',    // Bisque
-  'ACRO': 'rgba(255, 218, 185, 0.3)',         // Peach
-  'LAND': 'rgba(255, 160, 122, 0.3)',         // Light salmon
-  'CIRCLE': 'rgba(175, 238, 238, 0.3)',       // Pale turquoise
-  'FBWA': 'rgba(216, 191, 216, 0.3)',         // Thistle
-  'CRUISE': 'rgba(255, 250, 205, 0.3)',       // Lemon chiffon
+  'UNKNOWN': 'rgba(255, 192, 203, 0.5)',      // Light pink
+  'MANUAL': 'rgba(144, 238, 144, 0.5)',       // Light green
+  'RTL': 'rgba(173, 216, 230, 0.5)',          // Light blue  
+  'AUTO': 'rgba(176, 224, 230, 0.5)',         // Powder blue
+  'GUIDED': 'rgba(221, 160, 221, 0.5)',       // Plum
+  'LOITER': 'rgba(255, 255, 224, 0.5)',       // Light yellow
+  'STABILIZE': 'rgba(255, 228, 196, 0.5)',    // Bisque
+  'ACRO': 'rgba(255, 218, 185, 0.5)',         // Peach
+  'LAND': 'rgba(255, 160, 122, 0.5)',         // Light salmon
+  'CIRCLE': 'rgba(175, 238, 238, 0.5)',       // Pale turquoise
+  'FBWA': 'rgba(216, 191, 216, 0.5)',         // Thistle
+  'CRUISE': 'rgba(255, 250, 205, 0.5)',       // Lemon chiffon
 }
 
 // X-axis interval options (in seconds)
@@ -393,11 +393,11 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     
     return (
       <div style={{
-        background: 'rgba(0, 0, 0, 0.85)',
-        padding: '8px 12px',
+        background: '#1a1a1a',
+        padding: '10px 14px',
         borderRadius: 6,
         marginBottom: 12,
-        border: '1px solid rgba(255, 255, 255, 0.2)'
+        border: '2px solid #4CAF50'
       }}>
         <div style={{ 
           display: 'flex', 
@@ -407,7 +407,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           fontSize: 11,
           color: '#fff'
         }}>
-          <strong style={{ marginRight: 4, fontSize: 12, color: '#fff' }}>Flight Modes:</strong>
+          <strong style={{ marginRight: 4, fontSize: 12, color: '#4CAF50' }}>Flight Modes:</strong>
           {uniqueModes.map(mode => {
             const color = FLIGHT_MODE_COLORS[mode] || 'rgba(200, 200, 200, 0.3)'
             // Convert rgba to solid color for legend
