@@ -379,19 +379,24 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
   }
 
   // Flight Mode Legend Component
-  const FlightModeLegend = () => {
+  const FlightModeLegend = ({ isFullscreen = false }) => {
     if (!showFlightModes || !showFlightModeLegend || flightModes.length === 0) return null
     
     // Get unique flight modes
     const uniqueModes = [...new Set(flightModes.map(fm => fm.mode))]
     
+    const bgColor = isFullscreen ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.95)'
+    const textColor = isFullscreen ? '#fff' : '#000'
+    const borderColor = isFullscreen ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'
+    const closeButtonColor = isFullscreen ? '#999' : '#666'
+    
     return (
       <div style={{
-        background: 'rgba(0, 0, 0, 0.85)',
+        background: bgColor,
         padding: '8px 12px',
         borderRadius: 6,
         marginBottom: 12,
-        border: '1px solid rgba(255, 255, 255, 0.2)'
+        border: `1px solid ${borderColor}`
       }}>
         <div style={{ 
           display: 'flex', 
@@ -399,9 +404,9 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           flexWrap: 'wrap', 
           gap: 12,
           fontSize: 11,
-          color: '#fff'
+          color: textColor
         }}>
-          <strong style={{ marginRight: 4, fontSize: 12 }}>Flight Modes:</strong>
+          <strong style={{ marginRight: 4, fontSize: 12, color: textColor }}>Flight Modes:</strong>
           {uniqueModes.map(mode => {
             const color = FLIGHT_MODE_COLORS[mode] || 'rgba(200, 200, 200, 0.3)'
             // Convert rgba to solid color for legend
@@ -413,10 +418,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
                   width: 20,
                   height: 12,
                   backgroundColor: solidColor,
-                  border: '1px solid rgba(255, 255, 255, 0.4)',
+                  border: `1px solid ${isFullscreen ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.3)'}`,
                   borderRadius: 2
                 }} />
-                <span style={{ color: '#fff', fontWeight: 500 }}>{mode}</span>
+                <span style={{ color: textColor, fontWeight: 500 }}>{mode}</span>
               </div>
             )
           })}
@@ -426,7 +431,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
               marginLeft: 'auto',
               background: 'transparent',
               border: 'none',
-              color: '#999',
+              color: closeButtonColor,
               cursor: 'pointer',
               fontSize: 16,
               padding: 0,
@@ -560,7 +565,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         </div>
         
         {/* Flight Mode Legend */}
-        <FlightModeLegend />
+        <FlightModeLegend isFullscreen={false} />
         
         {renderChart(false)}
         <div style={{ fontSize: 11, color: '#666', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
@@ -686,7 +691,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           </div>
           
           {/* Flight Mode Legend in Fullscreen */}
-          <FlightModeLegend />
+          <FlightModeLegend isFullscreen={true} />
           
           {renderChart(true)}
           <div style={{ fontSize: 11, color: '#999', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
