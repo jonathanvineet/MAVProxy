@@ -212,29 +212,33 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     }
   }, [seriesData, predefinedGraph, selected])
   
-  // Build flight mode annotations as background regions
-  const annotations = {}
-  if (showFlightModes && flightModes.length > 0) {
-    flightModes.forEach((fm, idx) => {
-      const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-      
-      annotations[`mode-${idx}`] = {
-        type: 'box',
-        xMin: fm.start,
-        xMax: fm.end,
-        yMin: 'min',
-        yMax: 'max',
-        backgroundColor: color,
-        borderWidth: 0,
-        drawTime: 'beforeDatasetsDraw'
-      }
-    })
-  }
+  // Build flight mode annotations as background regions - memoized for performance
+  const annotations = useMemo(() => {
+    const annots = {}
+    if (showFlightModes && flightModes.length > 0) {
+      flightModes.forEach((fm, idx) => {
+        const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+        
+        annots[`mode-${idx}`] = {
+          type: 'box',
+          xMin: fm.start,
+          xMax: fm.end,
+          yMin: 'min',
+          yMax: 'max',
+          backgroundColor: color,
+          borderWidth: 0,
+          drawTime: 'beforeDatasetsDraw'
+        }
+      })
+    }
+    return annots
+  }, [showFlightModes, flightModes])
   
-  const data = { 
+  // Memoize chart data object
+  const data = useMemo(() => ({ 
     labels, 
     datasets
-  }
+  }), [labels, datasets])
 
   // Calculate zoom limits based on intervals
   const xAxisLimits = useMemo(() => {
@@ -246,7 +250,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
       min: Math.max(dataRange.min, center - xInterval / 2),
       max: Math.min(dataRange.max, center + xInterval / 2)
     }
-  }, [xInterval, dataRange])
+  }, [xInterval, dataRange.min, dataRange.max])
 
   const yAxisLimits = useMemo(() => {
     if (!yInterval) return { min: 'original', max: 'original' }
@@ -379,7 +383,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         }
       }
     }
-  }), [annotations, labels, xInterval, yInterval, xAxisLimits, yAxisLimits])
+  }), [annotations, xInterval, yInterval, xAxisLimits.min, xAxisLimits.max, yAxisLimits.min, yAxisLimits.max])
 
   const handleResetZoom = () => {
     if (chartRef.current) {
