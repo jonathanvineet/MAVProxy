@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Chart, registerables } from 'chart.js'
 import annotationPlugin from 'chartjs-plugin-annotation'
@@ -161,108 +161,92 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     'rgb(0, 255, 255)',    // cyan
   ]
 
-  // Memoize data processing for performance
-  const { labels, datasets, dataRange } = useMemo(() => {
-    // Collect all unique timestamps across all series
-    const allTimestamps = new Set()
-    Object.values(seriesData).forEach(series => {
-      series.forEach(p => allTimestamps.add(p.t))
+  // Collect all unique timestamps across all series
+  const allTimestamps = new Set()
+  Object.values(seriesData).forEach(series => {
+    series.forEach(p => allTimestamps.add(p.t))
+  })
+  const labels = Array.from(allTimestamps).sort((a, b) => a - b)
+  
+  // Calculate data range
+  const minTime = labels[0]
+  const maxTime = labels[labels.length - 1]
+  
+  // Build datasets for each field
+  const datasets = Object.keys(seriesData).map((field, idx) => {
+    const series = seriesData[field]
+    const color = SERIES_COLORS[idx % SERIES_COLORS.length]
+    
+    // Create a map of timestamp to value
+    const dataMap = {}
+    series.forEach(p => {
+      dataMap[p.t] = p.v
     })
-    const sortedLabels = Array.from(allTimestamps).sort((a, b) => a - b)
     
-    // Calculate data range
-    let minTime = sortedLabels[0]
-    let maxTime = sortedLabels[sortedLabels.length - 1]
+    // Map labels to values (null if not present)
+    const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
     
-    // Build datasets for each field
-    const builtDatasets = Object.keys(seriesData).map((field, idx) => {
-      const series = seriesData[field]
-      const color = SERIES_COLORS[idx % SERIES_COLORS.length]
+    // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
+    // For custom graphs, use message.field format
+    const label = predefinedGraph ? field : `${selected.msg}.${field}`
+    
+    return {
+      label: label,
+      data: values,
+      borderColor: color,
+      backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+      borderWidth: 2,
+      tension: 0.1,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      spanGaps: true
+    }
+  })
+  
+  // Build flight mode annotations as background regions
+  const annotations = {}
+  if (showFlightModes && flightModes.length > 0) {
+    flightModes.forEach((fm, idx) => {
+      const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
       
-      // Create a map of timestamp to value
-      const dataMap = {}
-      series.forEach(p => {
-        dataMap[p.t] = p.v
-      })
-      
-      // Map labels to values (null if not present)
-      const values = sortedLabels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-      
-      // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
-      // For custom graphs, use message.field format
-      const label = predefinedGraph ? field : `${selected.msg}.${field}`
-      
-      return {
-        label: label,
-        data: values,
-        borderColor: color,
-        backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-        borderWidth: 2,
-        tension: 0.1,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        spanGaps: true // Connect points even if there are nulls
+      annotations[`mode-${idx}`] = {
+        type: 'box',
+        xMin: fm.start,
+        xMax: fm.end,
+        yMin: 'min',
+        yMax: 'max',
+        backgroundColor: color,
+        borderWidth: 0,
+        drawTime: 'beforeDatasetsDraw'
       }
     })
-    
-    return {
-      labels: sortedLabels,
-      datasets: builtDatasets,
-      dataRange: { min: minTime, max: maxTime }
-    }
-  }, [seriesData, predefinedGraph, selected])
+  }
   
-  // Build flight mode annotations as background regions - memoized for performance
-  const annotations = useMemo(() => {
-    const annots = {}
-    if (showFlightModes && flightModes.length > 0) {
-      flightModes.forEach((fm, idx) => {
-        const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        
-        annots[`mode-${idx}`] = {
-          type: 'box',
-          xMin: fm.start,
-          xMax: fm.end,
-          yMin: 'min',
-          yMax: 'max',
-          backgroundColor: color,
-          borderWidth: 0,
-          drawTime: 'beforeDatasetsDraw'
-        }
-      })
-    }
-    return annots
-  }, [showFlightModes, flightModes])
-  
-  // Memoize chart data object
-  const data = useMemo(() => ({ 
+  const data = { 
     labels, 
     datasets
-  }), [labels, datasets])
+  }
 
   // Calculate zoom limits based on intervals
-  const xAxisLimits = useMemo(() => {
-    if (!xInterval || !dataRange.min) return { min: 'original', max: 'original' }
-    
-    // Center the interval around the middle of the data
-    const center = (dataRange.min + dataRange.max) / 2
-    return {
-      min: Math.max(dataRange.min, center - xInterval / 2),
-      max: Math.min(dataRange.max, center + xInterval / 2)
-    }
-  }, [xInterval, dataRange.min, dataRange.max])
+  let xMin = undefined
+  let xMax = undefined
+  if (xInterval && minTime && maxTime) {
+    const center = (minTime + maxTime) / 2
+    xMin = Math.max(minTime, center - xInterval / 2)
+    xMax = Math.min(maxTime, center + xInterval / 2)
+  }
 
-  const yAxisLimits = useMemo(() => {
-    if (!yInterval) return { min: 'original', max: 'original' }
-    return { min: -yInterval, max: yInterval }
-  }, [yInterval])
+  let yMin = undefined
+  let yMax = undefined
+  if (yInterval) {
+    yMin = -yInterval
+    yMax = yInterval
+  }
 
-  const options = useMemo(() => ({
+  const options = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: false, // Disable animations for better performance
-    parsing: false, // Data is already parsed
-    normalized: true, // Data is on scale
+    animation: false,
     interaction: {
       mode: 'nearest',
       axis: 'x',
@@ -277,8 +261,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           font: { size: 12 },
           color: '#fff'
         },
-        min: xInterval ? xAxisLimits.min : undefined,
-        max: xInterval ? xAxisLimits.max : undefined,
+        min: xMin,
+        max: xMax,
         grid: {
           display: true,
           color: 'rgba(255, 255, 255, 0.15)'
@@ -300,8 +284,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
           font: { size: 12 },
           color: '#fff'
         },
-        min: yInterval ? yAxisLimits.min : undefined,
-        max: yInterval ? yAxisLimits.max : undefined,
+        min: yMin,
+        max: yMax,
         grid: {
           display: true,
           color: 'rgba(255, 255, 255, 0.15)'
@@ -383,7 +367,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         }
       }
     }
-  }), [annotations, xInterval, yInterval, xAxisLimits.min, xAxisLimits.max, yAxisLimits.min, yAxisLimits.max])
+  }
 
   const handleResetZoom = () => {
     if (chartRef.current) {
