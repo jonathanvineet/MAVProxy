@@ -243,126 +243,132 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
     yMax = yInterval
   }
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    interaction: {
-      mode: 'nearest',
-      axis: 'x',
-      intersect: false
-    },
-    scales: {
-      x: {
-        type: 'linear',
-        title: { 
-          display: true, 
-          text: 'Time (s)',
-          font: { size: 12 },
-          color: '#fff'
+  // Create options function that adapts to fullscreen mode
+  const getChartOptions = (isFullscreen = false) => {
+    const textColor = isFullscreen ? '#fff' : '#000'
+    const gridColor = isFullscreen ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'
+    
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          title: { 
+            display: true, 
+            text: 'Time (s)',
+            font: { size: 12 },
+            color: textColor
+          },
+          min: xMin,
+          max: xMax,
+          grid: {
+            display: true,
+            color: gridColor
+          },
+          ticks: {
+            font: { size: 11 },
+            color: textColor,
+            maxTicksLimit: 12,
+            callback: function(value) {
+              const date = new Date(value * 1000)
+              return date.toTimeString().split(' ')[0]
+            }
+          }
         },
-        min: xMin,
-        max: xMax,
-        grid: {
-          display: true,
-          color: 'rgba(255, 255, 255, 0.15)'
-        },
-        ticks: {
-          font: { size: 11 },
-          color: '#fff',
-          maxTicksLimit: 12,
-          callback: function(value) {
-            const date = new Date(value * 1000)
-            return date.toTimeString().split(' ')[0]
+        y: {
+          title: { 
+            display: true, 
+            text: 'Value',
+            font: { size: 12 },
+            color: textColor
+          },
+          min: yMin,
+          max: yMax,
+          grid: {
+            display: true,
+            color: gridColor
+          },
+          ticks: {
+            font: { size: 11 },
+            color: textColor
           }
         }
       },
-      y: {
-        title: { 
-          display: true, 
-          text: 'Value',
-          font: { size: 12 },
-          color: '#fff'
-        },
-        min: yMin,
-        max: yMax,
-        grid: {
+      plugins: {
+        legend: { 
           display: true,
-          color: 'rgba(255, 255, 255, 0.15)'
+          position: 'top',
+          align: 'start',
+          labels: {
+            boxWidth: 40,
+            boxHeight: 10,
+            padding: 10,
+            font: { size: 11 },
+            usePointStyle: false,
+            color: textColor
+          },
+          onClick: function(e, legendItem, legend) {
+            const index = legendItem.datasetIndex
+            const chart = legend.chart
+            const meta = chart.getDatasetMeta(index)
+            
+            // Toggle visibility
+            meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null
+            chart.update()
+          }
         },
-        ticks: {
-          font: { size: 11 },
-          color: '#fff'
-        }
-      }
-    },
-    plugins: {
-      legend: { 
-        display: true,
-        position: 'top',
-        align: 'start',
-        labels: {
-          boxWidth: 40,
-          boxHeight: 10,
-          padding: 10,
-          font: { size: 11 },
-          usePointStyle: false,
-          color: '#fff'
-        },
-        onClick: function(e, legendItem, legend) {
-          const index = legendItem.datasetIndex
-          const chart = legend.chart
-          const meta = chart.getDatasetMeta(index)
-          
-          // Toggle visibility
-          meta.hidden = meta.hidden === null ? !chart.data.datasets[index].hidden : null
-          chart.update()
-        }
-      },
-      annotation: {
-        annotations
-      },
-      zoom: {
-        pan: {
-          enabled: true,
-          mode: 'xy',
-          modifierKey: 'shift'
+        annotation: {
+          annotations
         },
         zoom: {
-          wheel: {
+          pan: {
             enabled: true,
-            speed: 0.1
+            mode: 'xy',
+            modifierKey: 'shift'
           },
-          pinch: {
-            enabled: true
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.1
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: 'xy'
           },
-          mode: 'xy'
+          limits: {
+            x: { min: 'original', max: 'original' },
+            y: { min: 'original', max: 'original' }
+          }
         },
-        limits: {
-          x: { min: 'original', max: 'original' },
-          y: { min: 'original', max: 'original' }
-        }
-      },
-      tooltip: {
-        enabled: true,
-        mode: 'index',
-        intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleFont: { size: 12 },
-        bodyFont: { size: 11 },
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        callbacks: {
-          title: function(context) {
-            const index = context[0].dataIndex
-            const time = labels[index]
-            const date = new Date(time * 1000)
-            return date.toLocaleTimeString()
-          },
-          label: function(context) {
-            const label = context.dataset.label || ''
-            const value = context.parsed.y
-            return `${label}: ${value.toFixed(2)}`
+        tooltip: {
+          enabled: true,
+          mode: 'index',
+          intersect: false,
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          titleFont: { size: 12 },
+          bodyFont: { size: 11 },
+          titleColor: '#fff',
+          bodyColor: '#fff',
+          callbacks: {
+            title: function(context) {
+              const index = context[0].dataIndex
+              const time = labels[index]
+              const date = new Date(time * 1000)
+              return date.toLocaleTimeString()
+            },
+            label: function(context) {
+              const label = context.dataset.label || ''
+              const value = context.parsed.y
+              return `${label}: ${value.toFixed(2)}`
+            }
           }
         }
       }
@@ -460,7 +466,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph}){
         <div style={{ padding: 20, textAlign: 'center' }}>Loading...</div>
       ) : (
         <>
-          <Line ref={chartRef} data={data} options={options} />
+          <Line ref={chartRef} data={data} options={getChartOptions(isFullscreen)} />
           {!isFullscreen && (
             <div style={{ 
               position: 'absolute', 
