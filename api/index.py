@@ -35,13 +35,7 @@ logger = logging.getLogger(__name__)
 import mavexplorer_api
 
 # Import MongoDB manager
-try:
-    from mongo_client import mongo_manager
-    MONGO_AVAILABLE = True
-except Exception as e:
-    logger.warning(f"MongoDB client not available: {e}")
-    mongo_manager = None
-    MONGO_AVAILABLE = False
+from mongo_client import mongo_manager
 
 try:
     from pymavlink import mavutil
@@ -104,8 +98,8 @@ def health():
     """Health check endpoint."""
     return jsonify({
         'status': 'ok',
-        'mongo_connected': mongo_manager.connected if mongo_manager else False,
-        'mongo_enabled': mongo_manager.enabled if mongo_manager else False
+        'mongo_connected': mongo_manager.connected,
+        'mongo_enabled': mongo_manager.enabled
     })
 
 
@@ -115,9 +109,6 @@ def health():
 @app.route('/api/profiles', methods=['GET', 'OPTIONS'])
 def get_profiles():
     """Get all profiles (user_id is optional for backward compatibility)"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
-    
     user_id = request.args.get('user_id')
     
     if user_id:
@@ -131,9 +122,6 @@ def get_profiles():
 @app.route('/api/profiles', methods=['POST', 'OPTIONS'])
 def create_profile():
     """Create a new profile (user_id is optional)"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
-    
     data = request.get_json()
     user_id = data.get('user_id', 'anonymous')  # Default to 'anonymous' if not provided
     name = data.get('name')
@@ -153,8 +141,6 @@ def create_profile():
 @app.route('/api/profiles/<profile_id>', methods=['GET', 'OPTIONS'])
 def get_profile_detail(profile_id):
     """Get a specific profile"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
     profile = mongo_manager.get_profile(profile_id)
     if profile:
         return jsonify({'profile': profile})
@@ -165,8 +151,6 @@ def get_profile_detail(profile_id):
 @app.route('/api/profiles/<profile_id>', methods=['DELETE', 'OPTIONS'])
 def delete_profile_endpoint(profile_id):
     """Delete a profile"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
     success = mongo_manager.delete_profile(profile_id)
     if success:
         return jsonify({'status': 'deleted'})
@@ -177,8 +161,6 @@ def delete_profile_endpoint(profile_id):
 @app.route('/api/profiles/<profile_id>/analyses', methods=['GET', 'OPTIONS'])
 def get_profile_analyses(profile_id):
     """Get all analyses for a profile"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
     analyses = mongo_manager.get_analysis_results(profile_id)
     return jsonify({'analyses': analyses})
 
@@ -186,9 +168,8 @@ def get_profile_analyses(profile_id):
 @app.route('/save_graph', methods=['POST', 'OPTIONS'])
 @app.route('/api/save_graph', methods=['POST', 'OPTIONS'])
 def save_graph():
-    """Save a graph with description to a profile"""    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
-        data = request.get_json()
+    """Save a graph with description to a profile"""
+    data = request.get_json()
     profile_id = data.get('profile_id')
     name = data.get('name')
     description = data.get('description')
@@ -228,8 +209,6 @@ def save_graph():
 @app.route('/api/profiles/<profile_id>/saved_graphs', methods=['GET', 'OPTIONS'])
 def get_saved_graphs(profile_id):
     """Get all saved graphs for a profile"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
     try:
         graphs = mongo_manager.get_profile_saved_graphs(profile_id)
         return jsonify({'graphs': graphs})
@@ -242,8 +221,6 @@ def get_saved_graphs(profile_id):
 @app.route('/api/saved_graphs/<graph_id>', methods=['DELETE', 'OPTIONS'])
 def delete_saved_graph(graph_id):
     """Delete a saved graph"""
-    if not mongo_manager:
-        return jsonify({'error': 'MongoDB not available'}), 503
     try:
         success = mongo_manager.delete_saved_graph(graph_id)
         if success:
@@ -348,22 +325,15 @@ def upload_chunk():
             
             if mongo_manager.enabled:
                 try:
-                    # For Vercel deployment, store the file content in MongoDB
-                    # so subsequent requests can access it from any serverless instance
-                    file_content = None
-                    if os.getenv('VERCEL') or True:  # Always store for Vercel compatibility
-                        with open(decompressed_path, 'rb') as f:
-                            file_content = f.read()
-                            logger.info(f"Read {len(file_content)} bytes for MongoDB storage")
-                    
+                    # For Vercel deployment, store the token mapping in MongoDB
+                    # so subsequent requests can work even though the file is gone
                     analysis_result = mongo_manager.save_analysis_result(
                         profile_id=profile_id if profile_id else 'temp',
                         filename=original_filename,
                         file_size=total_size,
                         original_size=original_size,
                         analysis_data=out,
-                        token=token,  # Store the token for later retrieval
-                        file_content=file_content  # Store file for Vercel serverless
+                        token=token  # Store the token for later retrieval
                     )
                     if analysis_result:
                         analysis_db_id = analysis_result.get('id')
@@ -515,36 +485,24 @@ def timeseries():
     if not token:
         return jsonify({'error': 'token required'}), 400
     
-    if not msg or not field:
-        return jsonify({'error': 'msg and field required'}), 400
-    
-    # First check memory (for local/immediate requests on same instance)
+    # First check memory (for local/immediate requests)
     if token in UPLOADS:
         path = UPLOADS[token]['path']
     else:
-        # Try to get from MongoDB and restore file (for Vercel serverless cross-instance requests)
+        # Try to get from MongoDB (for Vercel serverless where memory is lost)
         analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
         if not analysis:
             return jsonify({
-                'error': 'File not found. Token may have expired or MongoDB storage unavailable.'
+                'error': 'File not found. On Vercel serverless deployments, files are only available immediately after upload. Please use the "Save Graph" feature to persist graph data, or run MAVProxy locally for full functionality.'
             }), 400
         
-        # Try to get file content from MongoDB
-        file_content = analysis.get('file_content')
-        if not file_content:
-            return jsonify({
-                'error': 'Raw file data not available. Please use the "Save Graph" feature during upload session.'
-            }), 400
-        
-        # Restore file to temp location
-        tmpdir = tempfile.mkdtemp(prefix='mavexplorer_restore_')
-        path = os.path.join(tmpdir, analysis.get('filename', 'restored.bin'))
-        with open(path, 'wb') as f:
-            f.write(file_content)
-        logger.info(f"Restored file from MongoDB: {path} ({len(file_content)} bytes)")
-        
-        # Store in UPLOADS for this instance
-        UPLOADS[token] = {'tmpdir': tmpdir, 'path': path, 'analysis': analysis.get('analysis_data')}
+        # We have the analysis but not the file - can't extract timeseries
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session, or run MAVProxy locally for unrestricted file access.'
+        }), 400
+    
+    if not msg or not field:
+        return jsonify({'error': 'msg and field required'}), 400
     
     try:
         series = []
