@@ -96,7 +96,12 @@ CHUNK_UPLOADS = {}
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint."""
-    return jsonify({'status': 'ok'})
+    return jsonify({
+        'status': 'ok',
+        'mongo_connected': mongo_manager.connected,
+        'mongo_enabled': mongo_manager.enabled
+    })
+
 
 # ===== Profile Endpoints =====
 
