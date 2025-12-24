@@ -35,7 +35,13 @@ logger = logging.getLogger(__name__)
 import mavexplorer_api
 
 # Import MongoDB manager
-from mongo_client import mongo_manager
+try:
+    from mongo_client import mongo_manager
+    MONGO_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"MongoDB client not available: {e}")
+    mongo_manager = None
+    MONGO_AVAILABLE = False
 
 try:
     from pymavlink import mavutil
@@ -98,8 +104,8 @@ def health():
     """Health check endpoint."""
     return jsonify({
         'status': 'ok',
-        'mongo_connected': mongo_manager.connected,
-        'mongo_enabled': mongo_manager.enabled
+        'mongo_connected': mongo_manager.connected if mongo_manager else False,
+        'mongo_enabled': mongo_manager.enabled if mongo_manager else False
     })
 
 
@@ -109,6 +115,9 @@ def health():
 @app.route('/api/profiles', methods=['GET', 'OPTIONS'])
 def get_profiles():
     """Get all profiles (user_id is optional for backward compatibility)"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    
     user_id = request.args.get('user_id')
     
     if user_id:
@@ -122,6 +131,9 @@ def get_profiles():
 @app.route('/api/profiles', methods=['POST', 'OPTIONS'])
 def create_profile():
     """Create a new profile (user_id is optional)"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
+    
     data = request.get_json()
     user_id = data.get('user_id', 'anonymous')  # Default to 'anonymous' if not provided
     name = data.get('name')
@@ -141,6 +153,8 @@ def create_profile():
 @app.route('/api/profiles/<profile_id>', methods=['GET', 'OPTIONS'])
 def get_profile_detail(profile_id):
     """Get a specific profile"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
     profile = mongo_manager.get_profile(profile_id)
     if profile:
         return jsonify({'profile': profile})
@@ -151,6 +165,8 @@ def get_profile_detail(profile_id):
 @app.route('/api/profiles/<profile_id>', methods=['DELETE', 'OPTIONS'])
 def delete_profile_endpoint(profile_id):
     """Delete a profile"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
     success = mongo_manager.delete_profile(profile_id)
     if success:
         return jsonify({'status': 'deleted'})
@@ -161,6 +177,8 @@ def delete_profile_endpoint(profile_id):
 @app.route('/api/profiles/<profile_id>/analyses', methods=['GET', 'OPTIONS'])
 def get_profile_analyses(profile_id):
     """Get all analyses for a profile"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
     analyses = mongo_manager.get_analysis_results(profile_id)
     return jsonify({'analyses': analyses})
 
@@ -168,8 +186,9 @@ def get_profile_analyses(profile_id):
 @app.route('/save_graph', methods=['POST', 'OPTIONS'])
 @app.route('/api/save_graph', methods=['POST', 'OPTIONS'])
 def save_graph():
-    """Save a graph with description to a profile"""
-    data = request.get_json()
+    """Save a graph with description to a profile"""    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
+        data = request.get_json()
     profile_id = data.get('profile_id')
     name = data.get('name')
     description = data.get('description')
@@ -209,6 +228,8 @@ def save_graph():
 @app.route('/api/profiles/<profile_id>/saved_graphs', methods=['GET', 'OPTIONS'])
 def get_saved_graphs(profile_id):
     """Get all saved graphs for a profile"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
     try:
         graphs = mongo_manager.get_profile_saved_graphs(profile_id)
         return jsonify({'graphs': graphs})
@@ -221,6 +242,8 @@ def get_saved_graphs(profile_id):
 @app.route('/api/saved_graphs/<graph_id>', methods=['DELETE', 'OPTIONS'])
 def delete_saved_graph(graph_id):
     """Delete a saved graph"""
+    if not mongo_manager:
+        return jsonify({'error': 'MongoDB not available'}), 503
     try:
         success = mongo_manager.delete_saved_graph(graph_id)
         if success:
