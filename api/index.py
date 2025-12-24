@@ -325,15 +325,22 @@ def upload_chunk():
             
             if mongo_manager.enabled:
                 try:
-                    # For Vercel deployment, store the token mapping in MongoDB
-                    # so subsequent requests can work even though the file is gone
+                    # For Vercel deployment, store the file content in MongoDB
+                    # so subsequent requests can access it from any serverless instance
+                    file_content = None
+                    if os.getenv('VERCEL') or True:  # Always store for Vercel compatibility
+                        with open(decompressed_path, 'rb') as f:
+                            file_content = f.read()
+                            logger.info(f"Read {len(file_content)} bytes for MongoDB storage")
+                    
                     analysis_result = mongo_manager.save_analysis_result(
                         profile_id=profile_id if profile_id else 'temp',
                         filename=original_filename,
                         file_size=total_size,
                         original_size=original_size,
                         analysis_data=out,
-                        token=token  # Store the token for later retrieval
+                        token=token,  # Store the token for later retrieval
+                        file_content=file_content  # Store file for Vercel serverless
                     )
                     if analysis_result:
                         analysis_db_id = analysis_result.get('id')
@@ -485,24 +492,36 @@ def timeseries():
     if not token:
         return jsonify({'error': 'token required'}), 400
     
-    # First check memory (for local/immediate requests)
+    if not msg or not field:
+        return jsonify({'error': 'msg and field required'}), 400
+    
+    # First check memory (for local/immediate requests on same instance)
     if token in UPLOADS:
         path = UPLOADS[token]['path']
     else:
-        # Try to get from MongoDB (for Vercel serverless where memory is lost)
+        # Try to get from MongoDB and restore file (for Vercel serverless cross-instance requests)
         analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
         if not analysis:
             return jsonify({
-                'error': 'File not found. On Vercel serverless deployments, files are only available immediately after upload. Please use the "Save Graph" feature to persist graph data, or run MAVProxy locally for full functionality.'
+                'error': 'File not found. Token may have expired or MongoDB storage unavailable.'
             }), 400
         
-        # We have the analysis but not the file - can't extract timeseries
-        return jsonify({
-            'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session, or run MAVProxy locally for unrestricted file access.'
-        }), 400
-    
-    if not msg or not field:
-        return jsonify({'error': 'msg and field required'}), 400
+        # Try to get file content from MongoDB
+        file_content = analysis.get('file_content')
+        if not file_content:
+            return jsonify({
+                'error': 'Raw file data not available. Please use the "Save Graph" feature during upload session.'
+            }), 400
+        
+        # Restore file to temp location
+        tmpdir = tempfile.mkdtemp(prefix='mavexplorer_restore_')
+        path = os.path.join(tmpdir, analysis.get('filename', 'restored.bin'))
+        with open(path, 'wb') as f:
+            f.write(file_content)
+        logger.info(f"Restored file from MongoDB: {path} ({len(file_content)} bytes)")
+        
+        # Store in UPLOADS for this instance
+        UPLOADS[token] = {'tmpdir': tmpdir, 'path': path, 'analysis': analysis.get('analysis_data')}
     
     try:
         series = []

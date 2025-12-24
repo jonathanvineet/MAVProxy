@@ -217,7 +217,11 @@ class MongoManager:
         return res.deleted_count > 0
 
     # -------- analyses --------
-    def save_analysis_result(self, profile_id: str, filename: str, file_size: int, original_size: int, analysis_data: Dict[str, Any], token: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def save_analysis_result(self, profile_id: str, filename: str, file_size: int, original_size: int, analysis_data: Dict[str, Any], token: Optional[str] = None, file_content: Optional[bytes] = None) -> Optional[Dict[str, Any]]:
+        """
+        Save analysis result and optionally the file content for Vercel serverless.
+        file_content: The decompressed .bin file bytes (for Vercel to enable cross-request access)
+        """
         if not self.connected:
             aid = str(uuid.uuid4())
             record = {
@@ -230,6 +234,7 @@ class MongoManager:
                 'token': token,
                 'created_at': _now_iso(),
             }
+            # Don't store file_content in memory (too large)
             self._mem_analysis_results[aid] = record
             self._save_to_files()  # Persist to disk
             return record
@@ -238,6 +243,23 @@ class MongoManager:
             'profile_id': profile_id,
             'filename': filename,
             'file_size': file_size,
+            'original_size': original_size,
+            'analysis_data': analysis_data,
+            'token': token,
+            'created_at': datetime.utcnow(),
+        }
+        
+        # Store file content as Binary for Vercel serverless support
+        if file_content:
+            from bson.binary import Binary
+            doc['file_content'] = Binary(file_content)
+        
+        res = self.db['analysis_results'].insert_one(doc)
+        doc['id'] = str(res.inserted_id)
+        # Don't include file_content in response (too large)
+        if 'file_content' in doc:
+            del doc['file_content']
+        return self._serialize(doc)
             'original_size': original_size,
             'analysis_data': analysis_data,
             'token': token,
