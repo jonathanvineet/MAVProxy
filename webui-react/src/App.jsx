@@ -41,6 +41,13 @@ export default function App(){
       const firstMsg = Object.keys(res.data.analysis.messages || {})[0]
       const firstField = res.data.analysis.messages[firstMsg]?.fields?.[0]
       setSelected({msg:firstMsg, field:firstField})
+      
+      // Show warning for production deployment about file persistence
+      if(import.meta.env.PROD){
+        setTimeout(() => {
+          alert('⚠️ IMPORTANT: File uploaded successfully!\n\nOn cloud deployment, graphs may not load after this session ends.\n\nTO SAVE YOUR DATA:\n1. Select messages/fields to create graphs\n2. Click "Save Graph" button for each graph\n3. View saved graphs anytime from "Saved Graphs" section\n\nFor unlimited file access, run locally with "npm run dev"')
+        }, 500)
+      }
     }catch(e){
       const msg = (e?.response?.data?.error || e.message)
       console.error('Analyze error', msg, e)

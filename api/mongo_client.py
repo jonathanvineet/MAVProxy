@@ -63,8 +63,10 @@ class MongoManager:
         if uri and MongoClient:
             try:
                 # Try with TLS first (production)
+                # Use longer timeout for serverless cold starts
                 tls_opts = {
-                    'serverSelectionTimeoutMS': 5000,
+                    'serverSelectionTimeoutMS': 15000,  # Increased from 5000
+                    'connectTimeoutMS': 15000,
                     'tls': True,
                     'retryWrites': True,
                     'w': 'majority'
@@ -80,9 +82,10 @@ class MongoManager:
             except Exception as tls_err:
                 # Try without TLS for development environments (Codespaces)
                 try:
-                    print(f"⚠️ TLS connection failed, trying without TLS for development...")
+                    print(f"⚠️ TLS connection failed: {str(tls_err)}, trying without TLS for development...")
                     dev_opts = {
-                        'serverSelectionTimeoutMS': 5000,
+                        'serverSelectionTimeoutMS': 15000,
+                        'connectTimeoutMS': 15000,
                         'tls': False,
                         'retryWrites': False,
                     }
@@ -96,6 +99,7 @@ class MongoManager:
                     print(f"⚠️ All MongoDB connection attempts failed, using file-based storage at {self.data_dir}")
                     print(f"   TLS error: {tls_err}")
                     print(f"   Dev error: {dev_err}")
+                    print(f"   Make sure MongoDB Atlas Network Access allows Vercel IPs (0.0.0.0/0)")
         else:
             print(f"ℹ️ MongoDB not configured; using file-based storage at {self.data_dir}")
 
