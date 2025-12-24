@@ -72,6 +72,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   const [expandedGraphDecimate, setExpandedGraphDecimate] = useState(1)
   const [expandedGraphXInterval, setExpandedGraphXInterval] = useState(null)
   const [expandedGraphYInterval, setExpandedGraphYInterval] = useState(null)
+  const [expandedGraphShowFlightModes, setExpandedGraphShowFlightModes] = useState(true)
 
   // Reload saved graphs function
   const reloadSavedGraphs = () => {
@@ -125,14 +126,19 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     setExpandedGraphDecimate(1)
     setExpandedGraphXInterval(null)
     setExpandedGraphYInterval(null)
+    setExpandedGraphShowFlightModes(true)
 
     try {
       // Try to use stored data first (series_data and flight_modes)
       if (graph.series_data && Object.keys(graph.series_data).length > 0) {
         console.log('Using stored series data from saved graph')
+        console.log('Graph flight_modes:', graph.flight_modes)
         setExpandedGraphData(graph.series_data)
         if (graph.flight_modes && graph.flight_modes.length > 0) {
+          console.log('Setting expanded flight modes:', graph.flight_modes)
           setExpandedGraphFlightModes(graph.flight_modes)
+        } else {
+          console.log('No flight modes found in stored graph data')
         }
       } else if (graph.token && graph.message_type && graph.field_name) {
         // Fallback: fetch data if not stored
@@ -613,14 +619,30 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   const renderExpandedSavedGraph = (graph, data, flightModes, xInt, yInt) => {
     if (!data) return null
 
+    console.log('renderExpandedSavedGraph called with:')
+    console.log('  - data keys:', Object.keys(data))
+    console.log('  - flightModes:', flightModes)
+    console.log('  - flightModes length:', flightModes?.length)
+
     const SERIES_COLORS = [
       'rgb(255, 0, 0)', 'rgb(0, 255, 0)', 'rgb(0, 0, 255)', 'rgb(255, 128, 0)',
       'rgb(128, 128, 0)', 'rgb(0, 0, 0)', 'rgb(128, 128, 128)', 'rgb(255, 255, 0)'
     ]
+    
+    // Use the same complete flight mode colors as the main graph
     const FLIGHT_MODE_COLORS = {
-      'MANUAL': 'rgba(144, 238, 144, 0.5)', 'RTL': 'rgba(173, 216, 230, 0.5)',
-      'AUTO': 'rgba(176, 224, 230, 0.5)', 'GUIDED': 'rgba(221, 160, 221, 0.5)',
-      'LOITER': 'rgba(255, 255, 224, 0.5)', 'LAND': 'rgba(255, 160, 122, 0.5)'
+      'UNKNOWN': 'rgba(255, 192, 203, 0.5)',      // Light pink
+      'MANUAL': 'rgba(144, 238, 144, 0.5)',       // Light green
+      'RTL': 'rgba(173, 216, 230, 0.5)',          // Light blue  
+      'AUTO': 'rgba(176, 224, 230, 0.5)',         // Powder blue
+      'GUIDED': 'rgba(221, 160, 221, 0.5)',       // Plum
+      'LOITER': 'rgba(255, 255, 224, 0.5)',       // Light yellow
+      'STABILIZE': 'rgba(255, 228, 196, 0.5)',    // Bisque
+      'ACRO': 'rgba(255, 218, 185, 0.5)',         // Peach
+      'LAND': 'rgba(255, 160, 122, 0.5)',         // Light salmon
+      'CIRCLE': 'rgba(175, 238, 238, 0.5)',       // Pale turquoise
+      'FBWA': 'rgba(216, 191, 216, 0.5)',         // Thistle
+      'CRUISE': 'rgba(255, 250, 205, 0.5)',       // Lemon chiffon
     }
 
     const allTimestamps = new Set()
@@ -664,8 +686,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     // Build flight mode annotations
     const annotations = {}
     if (flightModes && flightModes.length > 0) {
+      console.log('Building annotations for', flightModes.length, 'flight modes')
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+        console.log(`  Mode ${idx}: ${fm.mode} from ${fm.start} to ${fm.end}, color: ${color}`)
         annotations[`mode-${idx}`] = {
           type: 'box',
           xMin: fm.start,
@@ -677,11 +701,15 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
           drawTime: 'beforeDatasetsDraw'
         }
       })
+      console.log('Final annotations object:', annotations)
+    } else {
+      console.log('No flight modes to annotate')
     }
 
     const chartOptions = {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       plugins: {
         legend: { labels: { color: '#fff' }, position: 'top' },
         annotation: { annotations },
@@ -695,8 +723,19 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
         }
       },
       scales: {
-        x: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.1)' }, min: xMin, max: xMax },
-        y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.1)' }, min: yMin, max: yMax }
+        x: { 
+          type: 'linear',
+          ticks: { color: '#888' }, 
+          grid: { color: 'rgba(255,255,255,0.1)' }, 
+          min: xMin, 
+          max: xMax 
+        },
+        y: { 
+          ticks: { color: '#888' }, 
+          grid: { color: 'rgba(255,255,255,0.1)' }, 
+          min: yMin, 
+          max: yMax 
+        }
       },
       interaction: { mode: 'index', intersect: false }
     }
@@ -1089,10 +1128,11 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
                                 <option value="500">±500</option>
                               </select>
                             </div>
-                            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff' }}>
+                            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff', cursor: 'pointer' }}>
                               <input 
                                 type="checkbox" 
-                                defaultChecked={true}
+                                checked={expandedGraphShowFlightModes}
+                                onChange={(e) => setExpandedGraphShowFlightModes(e.target.checked)}
                               />
                               Show Flight Modes
                             </label>
@@ -1100,7 +1140,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
 
                           {/* Expanded chart - reuse chart logic */}
                           <div style={{ background: '#000', padding: 12, borderRadius: 4, height: 300, position: 'relative' }}>
-                            {renderExpandedSavedGraph(graph, expandedGraphData, expandedGraphFlightModes, expandedGraphXInterval, expandedGraphYInterval)}
+                            {renderExpandedSavedGraph(graph, expandedGraphData, expandedGraphShowFlightModes ? expandedGraphFlightModes : [], expandedGraphXInterval, expandedGraphYInterval)}
                           </div>
                         </div>
                       ) : (

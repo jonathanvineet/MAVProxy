@@ -213,7 +213,7 @@ class MongoManager:
         return res.deleted_count > 0
 
     # -------- analyses --------
-    def save_analysis_result(self, profile_id: str, filename: str, file_size: int, original_size: int, analysis_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def save_analysis_result(self, profile_id: str, filename: str, file_size: int, original_size: int, analysis_data: Dict[str, Any], token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not self.connected:
             aid = str(uuid.uuid4())
             record = {
@@ -223,6 +223,7 @@ class MongoManager:
                 'file_size': file_size,
                 'original_size': original_size,
                 'analysis_data': analysis_data,
+                'token': token,
                 'created_at': _now_iso(),
             }
             self._mem_analysis_results[aid] = record
@@ -235,11 +236,23 @@ class MongoManager:
             'file_size': file_size,
             'original_size': original_size,
             'analysis_data': analysis_data,
+            'token': token,
             'created_at': datetime.utcnow(),
         }
         res = self.db['analysis_results'].insert_one(doc)
         doc['id'] = str(res.inserted_id)
         return self._serialize(doc)
+
+    def get_analysis_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Get analysis result by token"""
+        if not self.connected:
+            for analysis in self._mem_analysis_results.values():
+                if analysis.get('token') == token:
+                    return analysis
+            return None
+        
+        doc = self.db['analysis_results'].find_one({'token': token})
+        return self._serialize(doc) if doc else None
 
     def get_analysis_results(self, profile_id: str) -> List[Dict[str, Any]]:
         if not self.connected:

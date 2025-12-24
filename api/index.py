@@ -314,23 +314,30 @@ def upload_chunk():
             UPLOADS[token] = {'tmpdir': tmpdir, 'path': decompressed_path, 'analysis': out}
             
             # Save to MongoDB if profile_id is provided
+            # On Vercel, we MUST save everything to MongoDB since files don't persist
             profile_id = request.form.get('profile_id')
             analysis_db_id = None
             
-            if profile_id and mongo_manager.enabled:
+            if mongo_manager.enabled:
                 try:
+                    # For Vercel deployment, store the token mapping in MongoDB
+                    # so subsequent requests can work even though the file is gone
                     analysis_result = mongo_manager.save_analysis_result(
-                        profile_id=profile_id,
+                        profile_id=profile_id if profile_id else 'temp',
                         filename=original_filename,
-                        file_size=os.path.getsize(compressed_path) if os.path.exists(compressed_path) else total_size,
+                        file_size=total_size,
                         original_size=original_size,
-                        analysis_data=out
+                        analysis_data=out,
+                        token=token  # Store the token for later retrieval
                     )
                     if analysis_result:
                         analysis_db_id = analysis_result.get('id')
                         logger.info(f"Analysis saved to MongoDB: {analysis_db_id}")
                 except Exception as e:
                     logger.error(f"Failed to save to MongoDB: {e}")
+                    # On Vercel, this is critical - fail the upload if MongoDB save fails
+                    if os.getenv('VERCEL'):
+                        return jsonify({'error': 'Failed to persist analysis data. MongoDB storage is required for Vercel deployment.'}), 500
             
             # Clean up chunk upload tracking
             del CHUNK_UPLOADS[upload_id]
@@ -470,12 +477,27 @@ def timeseries():
     field = request.args.get('field')
     decimate = int(request.args.get('decimate') or 1)
     
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
+    
+    # First check memory (for local/immediate requests)
+    if token in UPLOADS:
+        path = UPLOADS[token]['path']
+    else:
+        # Try to get from MongoDB (for Vercel serverless where memory is lost)
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. On Vercel serverless deployments, files are only available immediately after upload. Please use the "Save Graph" feature to persist graph data, or run MAVProxy locally for full functionality.'
+            }), 400
+        
+        # We have the analysis but not the file - can't extract timeseries
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session, or run MAVProxy locally for unrestricted file access.'
+        }), 400
+    
     if not msg or not field:
         return jsonify({'error': 'msg and field required'}), 400
-    
-    path = UPLOADS[token]['path']
     
     try:
         series = []
