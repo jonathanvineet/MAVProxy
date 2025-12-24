@@ -1,13 +1,12 @@
 import axios from 'axios'
 
-// Use environment variable for API URL in production, localhost in development
+// Decide API base URL. In dev, always use Vite proxy at /api to avoid CORS.
 const getAPIBaseURL = () => {
+  if (import.meta.env.DEV) {
+    return '/api'
+  }
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
-  }
-  // Fallback for development
-  if (typeof window !== 'undefined' && !window.location.origin.includes('localhost')) {
-    return window.location.origin + '/api'
   }
   return '/api'
 }
@@ -206,6 +205,17 @@ export default {
   },
   deleteAnalysisResult: (resultId) => {
     return client.delete(`/analysis/${resultId}`)
+  },
+  
+  // Saved Graphs
+  saveGraph: (graphData) => {
+    return client.post('/save_graph', graphData)
+  },
+  getSavedGraphs: (profileId) => {
+    return client.get(`/profiles/${profileId}/saved_graphs`)
+  },
+  deleteSavedGraph: (graphId) => {
+    return client.delete(`/saved_graphs/${graphId}`)
   }
 }
 

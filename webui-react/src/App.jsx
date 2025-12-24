@@ -17,13 +17,13 @@ export default function App(){
   const [selected, setSelected] = useState({msg:null, field:null})
   const [predefinedGraph, setPredefinedGraph] = useState(null)
   const [error, setError] = useState(null)
-  // const [selectedProfile, setSelectedProfile] = useState(null)
+  const [selectedProfile, setSelectedProfile] = useState(null)
 
   async function handleUpload(file, options, onProgress){
     setLoading(true)
     setError(null)
     
-    // Profile integration commented out for now
+    // Optionally require profile selection - uncomment if you want to enforce it
     // if(!selectedProfile){
     //   setError('Please select or create a drone profile first')
     //   setLoading(false)
@@ -32,8 +32,8 @@ export default function App(){
     
     try{
       let res
-      // Pass profileId to uploadFile (null for now)
-      res = await api.uploadFile(file, options, onProgress, null)
+      // Pass profileId to uploadFile
+      res = await api.uploadFile(file, options, onProgress, selectedProfile?.id || null)
       // server returns { token, analysis }
       setToken(res.data.token)
       setAnalysis(res.data.analysis)
@@ -57,8 +57,7 @@ export default function App(){
       </div>
 
       <div className="upload-section" style={{marginBottom: 16, background: '#1a1a1a', border: '1px solid #333', color: '#fff'}}>
-        {/* Profile integration temporarily disabled */}
-        {/* <ProfileManager onProfileSelect={setSelectedProfile} selectedProfile={selectedProfile} /> */}
+        <ProfileManager onProfileSelect={setSelectedProfile} selectedProfile={selectedProfile} />
         {error && <div style={{color:'#ff6b6b', marginBottom:8}}>{error}</div>}
         <FileUploader onUpload={handleUpload} loading={loading} disabled={false} />
       </div>
@@ -89,6 +88,7 @@ export default function App(){
               token={token} 
               selected={selected} 
               predefinedGraph={predefinedGraph}
+              selectedProfile={selectedProfile}
             />
           </div>
         </div>

@@ -18,3 +18,5 @@ windows/version.txt
 /.vscode
 /node_modules
 .vercel
+/.venv
+.env

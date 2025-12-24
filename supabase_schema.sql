@@ -29,12 +29,26 @@ CREATE TABLE IF NOT EXISTS analysis_results (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create saved_graphs table for storing user-saved graphs with descriptions
+CREATE TABLE IF NOT EXISTS saved_graphs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  graph_type VARCHAR(50),
+  message_type VARCHAR(100),
+  field_name VARCHAR(100),
+  token VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================
 -- ENABLE ROW LEVEL SECURITY
 -- ============================================
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analysis_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_graphs ENABLE ROW LEVEL SECURITY;
 
 -- ============================================
 -- PROFILES TABLE POLICIES
@@ -73,6 +87,22 @@ CREATE POLICY "analysis_results_public_delete" ON analysis_results
   FOR DELETE USING (true);
 
 -- ============================================
+-- SAVED_GRAPHS TABLE POLICIES
+-- ============================================
+
+-- Policy: Anyone can read all saved graphs
+CREATE POLICY "saved_graphs_public_read" ON saved_graphs
+  FOR SELECT USING (true);
+
+-- Policy: Anyone can insert new saved graphs
+CREATE POLICY "saved_graphs_public_insert" ON saved_graphs
+  FOR INSERT WITH CHECK (true);
+
+-- Policy: Anyone can delete any saved graph
+CREATE POLICY "saved_graphs_public_delete" ON saved_graphs
+  FOR DELETE USING (true);
+
+-- ============================================
 -- CREATE INDEXES FOR PERFORMANCE
 -- ============================================
 
@@ -81,7 +111,9 @@ CREATE INDEX idx_analysis_results_profile_id ON analysis_results(profile_id);
 
 -- Index: Find recently created analyses quickly
 CREATE INDEX idx_analysis_results_created_at ON analysis_results(created_at);
-CREATE INDEX idx_profiles_user_id ON profiles(user_id);
-CREATE INDEX idx_analysis_results_profile_id ON analysis_results(profile_id);
-CREATE INDEX idx_timeseries_analysis_id ON timeseries_data(analysis_id);
-CREATE INDEX idx_graphs_analysis_id ON graphs(analysis_id);
+
+-- Index: Find all saved graphs for a specific profile
+CREATE INDEX idx_saved_graphs_profile_id ON saved_graphs(profile_id);
+
+-- Index: Find recently saved graphs
+CREATE INDEX idx_saved_graphs_created_at ON saved_graphs(created_at);

@@ -14,23 +14,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import and run the Flask app
 from api.index import app
 
-def find_available_port(start_port=5000, max_port=5010):
-    """Find an available port"""
-    for port in range(start_port, max_port):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.bind(('localhost', port))
-            sock.close()
-            return port
-        except OSError:
-            continue
-    return None
+def get_port():
+    """Get port from env or default to 5000.
+
+    Avoid auto-incrementing ports when the Flask reloader restarts,
+    which can cause the frontend to target a different port.
+    """
+    env_port = os.getenv("BACKEND_PORT") or os.getenv("PORT")
+    try:
+        return int(env_port) if env_port else 5000
+    except ValueError:
+        return 5000
 
 if __name__ == '__main__':
-    port = find_available_port()
-    if not port:
-        print("❌ Could not find available port between 5000-5010")
-        sys.exit(1)
+    port = get_port()
     
     print("=" * 60)
     print("MAVProxy Backend Development Server")
@@ -47,4 +44,6 @@ if __name__ == '__main__':
     print("Press Ctrl+C to stop")
     print()
     
+    # Use a fixed port so the frontend .env matches reliably
+    # Bind on 0.0.0.0 for devcontainer/docker access; VS Code will forward the port.
     app.run(host='0.0.0.0', port=port, debug=True)

@@ -8,14 +8,14 @@ import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
 # Add parent directory and current directory to path so imports work
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
+
+# Load environment variables from parent directory (where .env is located)
+load_dotenv(os.path.join(parent_dir, '.env'))
 
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 # Import the analysis API
 import mavexplorer_api
 
-# Import Supabase manager
-from supabase_client import supabase_manager
+# Import MongoDB manager
+from mongo_client import mongo_manager
 
 try:
     from pymavlink import mavutil
@@ -46,8 +46,9 @@ except Exception as e:
 # Create Flask app
 app = Flask(__name__)
 # Vercel has a 4.5MB payload limit for serverless functions
-# Set max content length to 4MB to stay safe
-app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
+# Set max content length to 20MB for graph data with series_data
+# This accommodates larger predefined graphs with all their historical data points
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 
 # Enable CORS
 try:
@@ -102,29 +103,32 @@ def health():
 @app.route('/profiles', methods=['GET', 'OPTIONS'])
 @app.route('/api/profiles', methods=['GET', 'OPTIONS'])
 def get_profiles():
-    """Get all profiles for a user"""
+    """Get all profiles (user_id is optional for backward compatibility)"""
     user_id = request.args.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'user_id required'}), 400
     
-    profiles = supabase_manager.get_user_profiles(user_id)
-    return jsonify({'profiles': profiles})
+    if user_id:
+        profiles = mongo_manager.get_user_profiles(user_id)
+    else:
+        # Get all profiles if no user_id specified
+        profiles = mongo_manager.get_all_profiles()
+    return jsonify(profiles if isinstance(profiles, list) else [profiles])
 
 @app.route('/profiles', methods=['POST', 'OPTIONS'])
 @app.route('/api/profiles', methods=['POST', 'OPTIONS'])
 def create_profile():
-    """Create a new profile"""
+    """Create a new profile (user_id is optional)"""
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id', 'anonymous')  # Default to 'anonymous' if not provided
     name = data.get('name')
     description = data.get('description', '')
+    drone_type = data.get('drone_type')
     
-    if not user_id or not name:
-        return jsonify({'error': 'user_id and name required'}), 400
+    if not name:
+        return jsonify({'error': 'name required'}), 400
     
-    profile = supabase_manager.create_profile(user_id, name, description)
+    profile = mongo_manager.create_profile(user_id, name, description, drone_type)
     if profile:
-        return jsonify({'profile': profile})
+        return jsonify(profile)
     else:
         return jsonify({'error': 'failed to create profile'}), 500
 
@@ -132,7 +136,7 @@ def create_profile():
 @app.route('/api/profiles/<profile_id>', methods=['GET', 'OPTIONS'])
 def get_profile_detail(profile_id):
     """Get a specific profile"""
-    profile = supabase_manager.get_profile(profile_id)
+    profile = mongo_manager.get_profile(profile_id)
     if profile:
         return jsonify({'profile': profile})
     else:
@@ -142,7 +146,7 @@ def get_profile_detail(profile_id):
 @app.route('/api/profiles/<profile_id>', methods=['DELETE', 'OPTIONS'])
 def delete_profile_endpoint(profile_id):
     """Delete a profile"""
-    success = supabase_manager.delete_profile(profile_id)
+    success = mongo_manager.delete_profile(profile_id)
     if success:
         return jsonify({'status': 'deleted'})
     else:
@@ -152,8 +156,75 @@ def delete_profile_endpoint(profile_id):
 @app.route('/api/profiles/<profile_id>/analyses', methods=['GET', 'OPTIONS'])
 def get_profile_analyses(profile_id):
     """Get all analyses for a profile"""
-    analyses = supabase_manager.get_analysis_results(profile_id)
+    analyses = mongo_manager.get_analysis_results(profile_id)
     return jsonify({'analyses': analyses})
+
+
+@app.route('/save_graph', methods=['POST', 'OPTIONS'])
+@app.route('/api/save_graph', methods=['POST', 'OPTIONS'])
+def save_graph():
+    """Save a graph with description to a profile"""
+    data = request.get_json()
+    profile_id = data.get('profile_id')
+    name = data.get('name')
+    description = data.get('description')
+    graph_type = data.get('graph_type', 'custom')
+    message_type = data.get('message_type')
+    field_name = data.get('field_name')
+    token = data.get('token')
+    series_data = data.get('series_data')  # Store actual graph data
+    flight_modes = data.get('flight_modes')  # Store flight modes
+    
+    if not profile_id or not name or not description:
+        return jsonify({'error': 'profile_id, name, and description required'}), 400
+    
+    try:
+        saved_graph = mongo_manager.save_graph_to_profile(
+            profile_id=profile_id,
+            name=name,
+            description=description,
+            graph_type=graph_type,
+            message_type=message_type,
+            field_name=field_name,
+            token=token,
+            series_data=series_data,
+            flight_modes=flight_modes
+        )
+        
+        if saved_graph:
+            return jsonify({'graph': saved_graph}), 201
+        else:
+            return jsonify({'error': 'failed to save graph'}), 500
+    except Exception as e:
+        logger.error(f"Error saving graph: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/profiles/<profile_id>/saved_graphs', methods=['GET', 'OPTIONS'])
+@app.route('/api/profiles/<profile_id>/saved_graphs', methods=['GET', 'OPTIONS'])
+def get_saved_graphs(profile_id):
+    """Get all saved graphs for a profile"""
+    try:
+        graphs = mongo_manager.get_profile_saved_graphs(profile_id)
+        return jsonify({'graphs': graphs})
+    except Exception as e:
+        logger.error(f"Error fetching saved graphs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/saved_graphs/<graph_id>', methods=['DELETE', 'OPTIONS'])
+@app.route('/api/saved_graphs/<graph_id>', methods=['DELETE', 'OPTIONS'])
+def delete_saved_graph(graph_id):
+    """Delete a saved graph"""
+    try:
+        success = mongo_manager.delete_saved_graph(graph_id)
+        if success:
+            return jsonify({'status': 'deleted'})
+        else:
+            return jsonify({'error': 'failed to delete graph'}), 500
+    except Exception as e:
+        logger.error(f"Error deleting saved graph: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/upload_chunk', methods=['POST', 'OPTIONS'])
@@ -238,17 +309,17 @@ def upload_chunk():
                 logger.error(f"Failed to analyze file: {e}", exc_info=True)
                 return jsonify({'error': 'failed to parse log: ' + str(e)}), 500
             
-            # Store results in memory and Supabase
+            # Store results in memory and MongoDB
             token = str(uuid.uuid4())
             UPLOADS[token] = {'tmpdir': tmpdir, 'path': decompressed_path, 'analysis': out}
             
-            # Save to Supabase if profile_id is provided
+            # Save to MongoDB if profile_id is provided
             profile_id = request.form.get('profile_id')
             analysis_db_id = None
             
-            if profile_id and supabase_manager.enabled:
+            if profile_id and mongo_manager.enabled:
                 try:
-                    analysis_result = supabase_manager.save_analysis_result(
+                    analysis_result = mongo_manager.save_analysis_result(
                         profile_id=profile_id,
                         filename=original_filename,
                         file_size=os.path.getsize(compressed_path) if os.path.exists(compressed_path) else total_size,
@@ -257,9 +328,9 @@ def upload_chunk():
                     )
                     if analysis_result:
                         analysis_db_id = analysis_result.get('id')
-                        logger.info(f"Analysis saved to Supabase: {analysis_db_id}")
+                        logger.info(f"Analysis saved to MongoDB: {analysis_db_id}")
                 except Exception as e:
-                    logger.error(f"Failed to save to Supabase: {e}")
+                    logger.error(f"Failed to save to MongoDB: {e}")
             
             # Clean up chunk upload tracking
             del CHUNK_UPLOADS[upload_id]

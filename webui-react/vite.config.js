@@ -4,10 +4,15 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: '127.0.0.1',
+    // Bind to all interfaces so Codespaces/containers can reach it
+    host: '0.0.0.0',
     proxy: {
-      // use explicit IPv4 loopback to avoid tooling resolving to ::1
-      '/api': 'http://127.0.0.1:3030'
+      // Proxy API calls to the backend to avoid CORS during development
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        secure: false
+      }
     }
   }
 })

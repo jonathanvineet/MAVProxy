@@ -6,3 +6,5 @@ pandas
 Flask-Cors
 asgiref
 gunicorn
+pymongo
+certifi
