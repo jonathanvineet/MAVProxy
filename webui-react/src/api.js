@@ -210,54 +210,65 @@ export default {
   // Saved Graphs
   saveGraph: async (graphData) => {
     // Check if the payload is too large (> 3MB)
+    console.log('saveGraph called with:', {
+      profile_id: graphData.profile_id,
+      name: graphData.name,
+      has_token: !!graphData.token,
+      message_type: graphData.message_type,
+      field_name: graphData.field_name,
+      flight_modes_count: graphData.flight_modes?.length || 0,
+      series_data_fields: Object.keys(graphData.series_data || {}).length
+    })
+    
     const jsonString = JSON.stringify(graphData)
     const payloadSize = new Blob([jsonString]).size
     
     console.log('Graph save payload size:', (payloadSize / 1024 / 1024).toFixed(2), 'MB')
+    console.log('JSON string length:', jsonString.length)
     
     // If small enough, send directly
     if (payloadSize < 3 * 1024 * 1024) {
+      console.log('Sending graph directly (payload < 3MB)')
       return client.post('/save_graph', graphData)
     }
     
     // Otherwise, use chunked approach
     console.log('Payload too large, using chunked save')
     
-    // Split flight_modes into chunks if it exists and is large
-    const maxFlightModesPerChunk = 1000
+    // Split series_data by field into chunks
+    const seriesData = graphData.series_data || {}
     const flightModes = graphData.flight_modes || []
-    const chunks = []
+    const fields = Object.keys(seriesData)
     
-    for (let i = 0; i < flightModes.length; i += maxFlightModesPerChunk) {
-      chunks.push(flightModes.slice(i, i + maxFlightModesPerChunk))
-    }
-    
-    // If no flight modes, just send the base data
-    if (chunks.length === 0) {
-      return client.post('/save_graph', graphData)
-    }
-    
-    // Send first chunk with all metadata
-    const firstChunkData = {
+    // First, send the metadata without series_data
+    const metadataChunk = {
       ...graphData,
-      flight_modes: chunks[0],
+      series_data: {},  // Send empty initially
+      flight_modes: flightModes,
       chunk_info: {
         chunk_index: 0,
-        total_chunks: chunks.length,
-        is_chunked: true
+        total_chunks: fields.length + 1,  // +1 for metadata
+        is_chunked: true,
+        total_fields: fields.length
       }
     }
     
-    const response = await client.post('/save_graph', firstChunkData)
+    console.log('Sending metadata chunk with', fields.length, 'fields to persist')
+    const response = await client.post('/save_graph', metadataChunk)
     const graphId = response.data.graph.id
     
-    // Send remaining chunks
-    for (let i = 1; i < chunks.length; i++) {
+    // Send each field as a separate chunk
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i]
+      const fieldData = seriesData[field] || []
+      console.log(`Sending field chunk ${i + 1}/${fields.length}: ${field} with ${fieldData.length} points`)
+      
       await client.post('/save_graph_chunk', {
         graph_id: graphId,
-        flight_modes_chunk: chunks[i],
-        chunk_index: i,
-        total_chunks: chunks.length
+        field_name: field,
+        series_data: fieldData,
+        chunk_index: i + 1,
+        total_chunks: fields.length + 1
       })
     }
     

@@ -338,6 +338,24 @@ class MongoManager:
         )
         return res.modified_count > 0
 
+    def append_series_data_to_graph(self, graph_id: str, field_name: str, series_data: List) -> bool:
+        """Append series data for a field to an existing saved graph"""
+        if not self.connected:
+            if graph_id in self._mem_saved_graphs:
+                if 'series_data' not in self._mem_saved_graphs[graph_id]:
+                    self._mem_saved_graphs[graph_id]['series_data'] = {}
+                self._mem_saved_graphs[graph_id]['series_data'][field_name] = series_data
+                self._save_to_files()
+                return True
+            return False
+        
+        # Use $set to set/update the field in series_data
+        res = self.db['saved_graphs'].update_one(
+            {'_id': _coerce_object_id(graph_id)},
+            {'$set': {f'series_data.{field_name}': series_data}}
+        )
+        return res.modified_count > 0 or res.matched_count > 0
+
     def get_graphs(self, analysis_id: str) -> List[Dict[str, Any]]:
         if not self.connected:
             return [g for g in self._mem_saved_graphs.values() if g.get('analysis_id') == analysis_id]

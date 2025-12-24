@@ -142,27 +142,55 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
         }
       } else if (graph.token && graph.message_type && graph.field_name) {
         // Fallback: fetch data if not stored
-        console.log('Fetching series data for saved graph')
-        const fields = graph.field_name === 'All' 
-          ? (await api.listMessages(graph.token)).data.messages?.[graph.message_type] || []
-          : graph.field_name.split(',')
+        console.log('Fetching series data for saved graph with token:', graph.token)
+        console.log('Message type:', graph.message_type, 'Field name:', graph.field_name)
         
-        const allData = {}
-        await Promise.all(
-          fields.map(async field => {
-            try {
-              const res = await api.getTimeseries(graph.token, graph.message_type, field)
-              allData[field] = res.data.series || []
-            } catch(e) {
-              console.error(`Error fetching ${field}:`, e)
+        try {
+          const fields = graph.field_name === 'All' 
+            ? (await api.listMessages(graph.token)).data.messages?.[graph.message_type] || []
+            : graph.field_name.split(',')
+          
+          console.log('Fields to fetch:', fields)
+          
+          const allData = {}
+          const results = await Promise.all(
+            fields.map(async field => {
+              try {
+                console.log(`Fetching timeseries for field: ${field}`)
+                const res = await api.getTimeseries(graph.token, graph.message_type, field)
+                console.log(`Fetched ${field}:`, res.data.series?.length || 0, 'points')
+                allData[field] = res.data.series || []
+                return { field, success: true, points: res.data.series?.length || 0 }
+              } catch(e) {
+                console.error(`Error fetching ${field}:`, e.message, e.response?.data)
+                return { field, success: false, error: e.message }
+              }
+            })
+          )
+          
+          console.log('Fetch results:', results)
+          console.log('All data keys:', Object.keys(allData))
+          console.log('Data fetched:', allData)
+          setExpandedGraphData(allData)
+          
+          // Fetch flight modes
+          try {
+            const modesRes = await api.getFlightModes(graph.token)
+            console.log('Flight modes fetched:', modesRes.data.modes?.length || 0)
+            setExpandedGraphFlightModes(modesRes.data.modes || [])
+          } catch(e) {
+            console.error('Error fetching flight modes:', e.message)
+            // Use the ones from the graph if fetching fails
+            if (graph.flight_modes?.length > 0) {
+              setExpandedGraphFlightModes(graph.flight_modes)
             }
-          })
-        )
-        setExpandedGraphData(allData)
-        
-        // Fetch flight modes
-        const modesRes = await api.getFlightModes(graph.token)
-        setExpandedGraphFlightModes(modesRes.data.modes || [])
+          }
+        } catch (error) {
+          console.error('Error in data fetching process:', error)
+          throw error
+        }
+      } else {
+        console.log('No data source available for graph. Token:', !!graph.token, 'Message:', !!graph.message_type, 'Field:', !!graph.field_name)
       }
     } catch (error) {
       console.error('Error loading expanded graph:', error)
@@ -276,6 +304,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     try {
       // Capture the current graph state
       const currentFields = Object.keys(seriesData)
+      
+      // For saving, we need to include the series_data while the file is still in memory
+      // This will be sent in chunks if it's too large
+      console.log('Collecting series data for save...')
       const graphData = {
         profile_id: selectedProfile.id,
         name: graphName,
@@ -284,12 +316,17 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
         message_type: predefinedGraph ? predefinedGraph.name : (selected?.msg || null),
         field_name: predefinedGraph ? predefinedGraph.name : (selected?.field === 'All' ? 'All' : currentFields.join(',')), // Save all visible fields
         token: token,
-        // Don't send series_data to avoid 4MB payload limit on Vercel
-        // The data will be regenerated from the uploaded file when viewing
+        // Include the current series_data so it persists in MongoDB
+        // This will be serialized and chunked by the API if needed
+        series_data: seriesData,
         flight_modes: flightModes  // Store flight mode data
       }
 
       console.log('Saving graph with data:', graphData)
+      console.log('Flight modes count:', graphData.flight_modes?.length || 0)
+      console.log('Token:', graphData.token ? 'present' : 'missing')
+      console.log('Message type:', graphData.message_type)
+      console.log('Field name:', graphData.field_name)
       await api.saveGraph(graphData)
       alert('Graph saved successfully!')
       setShowSaveDialog(false)

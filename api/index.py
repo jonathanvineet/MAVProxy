@@ -233,10 +233,12 @@ def save_graph():
 @app.route('/save_graph_chunk', methods=['POST', 'OPTIONS'])
 @app.route('/api/save_graph_chunk', methods=['POST', 'OPTIONS'])
 def save_graph_chunk():
-    """Append flight modes chunk to an existing saved graph"""
+    """Append data chunks to an existing saved graph"""
     data = request.get_json()
     graph_id = data.get('graph_id')
-    flight_modes_chunk = data.get('flight_modes_chunk', [])
+    field_name = data.get('field_name')  # For series_data chunks
+    series_data = data.get('series_data')  # Series data for the field
+    flight_modes_chunk = data.get('flight_modes_chunk')  # For flight modes chunks (legacy)
     chunk_index = data.get('chunk_index')
     total_chunks = data.get('total_chunks')
     
@@ -244,8 +246,16 @@ def save_graph_chunk():
         return jsonify({'error': 'graph_id required'}), 400
     
     try:
-        logger.info(f"Appending chunk {chunk_index + 1} of {total_chunks} to graph {graph_id}")
-        success = mongo_manager.append_flight_modes_to_graph(graph_id, flight_modes_chunk)
+        if field_name and series_data is not None:
+            # Appending series data for a field
+            logger.info(f"Appending series chunk {chunk_index + 1} of {total_chunks} (field: {field_name}) to graph {graph_id}")
+            success = mongo_manager.append_series_data_to_graph(graph_id, field_name, series_data)
+        elif flight_modes_chunk:
+            # Appending flight modes chunk (legacy)
+            logger.info(f"Appending flight modes chunk {chunk_index + 1} of {total_chunks} to graph {graph_id}")
+            success = mongo_manager.append_flight_modes_to_graph(graph_id, flight_modes_chunk)
+        else:
+            return jsonify({'error': 'either field_name+series_data or flight_modes_chunk required'}), 400
         
         if success:
             return jsonify({'success': True, 'chunk_index': chunk_index}), 200
