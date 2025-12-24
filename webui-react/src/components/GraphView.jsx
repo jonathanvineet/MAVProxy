@@ -284,8 +284,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
         message_type: predefinedGraph ? predefinedGraph.name : (selected?.msg || null),
         field_name: predefinedGraph ? predefinedGraph.name : (selected?.field === 'All' ? 'All' : currentFields.join(',')), // Save all visible fields
         token: token,
-        // Store additional metadata for reconstruction
-        series_data: seriesData,  // Store actual data points
+        // Don't send series_data to avoid 4MB payload limit on Vercel
+        // The data will be regenerated from the uploaded file when viewing
         flight_modes: flightModes  // Store flight mode data
       }
 

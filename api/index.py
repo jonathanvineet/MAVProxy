@@ -46,9 +46,8 @@ except Exception as e:
 # Create Flask app
 app = Flask(__name__)
 # Vercel has a 4.5MB payload limit for serverless functions
-# Set max content length to 20MB for graph data with series_data
-# This accommodates larger predefined graphs with all their historical data points
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
+# Reduce to 4MB to account for Vercel's limit, excluding overhead
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024  # 4MB
 
 # Enable CORS
 try:
@@ -92,10 +91,15 @@ def add_cors_headers(response):
 
 @app.errorhandler(413)
 def payload_too_large(e):
-    """Handle file too large errors."""
-    return jsonify({
-        'error': 'Compressed file too large. Maximum compressed size is 4MB. Try enabling higher compression or use a smaller file, or run MAVProxy locally for very large files.'
-    }), 413
+    """Handle file too large errors with CORS headers."""
+    response = jsonify({
+        'error': 'Payload too large. Maximum size is 4MB. Graph data with all series is too large for serverless. Save individual graphs or use smaller datasets.'
+    })
+    response.status_code = 413
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+    return response
 
 # In-memory storage for uploads (note: Vercel instances are ephemeral)
 UPLOADS = {}
