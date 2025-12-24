@@ -707,29 +707,61 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     })
     const labels = Array.from(allTimestamps).sort((a, b) => a - b)
 
-    const datasets = Object.keys(data).map((field, idx) => {
+    // Build datasets; saved graphs may store nested objects per message (e.g., data['ATT']={DesPitch:[...], DesRoll:[...]})
+    const datasets = []
+    let colorIdx = 0
+    Object.keys(data).forEach((field) => {
       const series = data[field]
-      if (!Array.isArray(series)) return null
-      const color = SERIES_COLORS[idx % SERIES_COLORS.length]
-      const dataMap = {}
-      series.forEach(p => {
-        const norm = normalizePoint(p)
-        if (norm) dataMap[norm.t] = norm.v
-      })
-      const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-      
-      return {
-        label: field,
-        data: values,
-        borderColor: color,
-        backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-        borderWidth: 2,
-        tension: 0.1,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        spanGaps: true
+      // Case 1: direct array of points
+      if (Array.isArray(series)) {
+        const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
+        colorIdx += 1
+        const dataMap = {}
+        series.forEach(p => {
+          const norm = normalizePoint(p)
+          if (norm) dataMap[norm.t] = norm.v
+        })
+        const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+        datasets.push({
+          label: field,
+          data: values,
+          borderColor: color,
+          backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+          borderWidth: 2,
+          tension: 0.1,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          spanGaps: true
+        })
+        return
       }
-    }).filter(d => d !== null)
+      // Case 2: nested object of arrays
+      if (series && typeof series === 'object') {
+        Object.keys(series).forEach(sub => {
+          const arr = series[sub]
+          if (!Array.isArray(arr)) return
+          const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
+          colorIdx += 1
+          const dataMap = {}
+          arr.forEach(p => {
+            const norm = normalizePoint(p)
+            if (norm) dataMap[norm.t] = norm.v
+          })
+          const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+          datasets.push({
+            label: `${field}.${sub}`,
+            data: values,
+            borderColor: color,
+            backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+            borderWidth: 2,
+            tension: 0.1,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            spanGaps: true
+          })
+        })
+      }
+    })
 
     const chartData = { labels, datasets }
     const minTime = labels[0]
