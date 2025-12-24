@@ -53,8 +53,15 @@ app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB
 # Enable CORS
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
-except:
+    CORS(app, 
+         resources={r"/*": {"origins": "*"}},
+         supports_credentials=True,
+         allow_headers=['Content-Type', 'Authorization'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'])
+    logger.info("✅ CORS enabled with flask_cors")
+except Exception as cors_err:
+    logger.error(f"❌ Failed to load flask_cors: {cors_err}")
+    # Fallback to manual CORS headers below
     pass
 
 @app.before_request
@@ -62,17 +69,20 @@ def handle_preflight():
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
         response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
         response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Max-Age'] = '3600'
         return response
 
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,*'
     response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS,PUT,DELETE,PATCH'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
     response.headers['Access-Control-Max-Age'] = '3600'
+    return response
     # Prevent caching of error responses
     if response.status_code >= 400:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
