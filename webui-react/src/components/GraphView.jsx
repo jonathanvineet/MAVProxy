@@ -682,9 +682,28 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
       'CRUISE': 'rgba(255, 250, 205, 0.5)',       // Lemon chiffon
     }
 
+    // Normalize series points and coerce timestamps/values to numbers so string timestamps
+    // from MongoDB still align with numeric labels.
+    const normalizePoint = (p) => {
+      if (!p) return null
+      // Support both {t, v} objects and [t, v] arrays
+      if (Array.isArray(p) && p.length >= 2) {
+        const t = Number(p[0])
+        const v = Number(p[1])
+        return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
+      }
+      if (p.t === undefined || p.v === undefined) return null
+      const t = Number(p.t)
+      const v = Number(p.v)
+      return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
+    }
+
     const allTimestamps = new Set()
     Object.values(data).forEach(series => {
-      if (Array.isArray(series)) series.forEach(p => { if (p && p.t) allTimestamps.add(p.t) })
+      if (Array.isArray(series)) series.forEach(p => {
+        const norm = normalizePoint(p)
+        if (norm) allTimestamps.add(norm.t)
+      })
     })
     const labels = Array.from(allTimestamps).sort((a, b) => a - b)
 
@@ -693,7 +712,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
       if (!Array.isArray(series)) return null
       const color = SERIES_COLORS[idx % SERIES_COLORS.length]
       const dataMap = {}
-      series.forEach(p => { if (p && p.t !== undefined && p.v !== undefined) dataMap[p.t] = p.v })
+      series.forEach(p => {
+        const norm = normalizePoint(p)
+        if (norm) dataMap[norm.t] = norm.v
+      })
       const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
       
       return {
