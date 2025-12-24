@@ -60,6 +60,24 @@ export default function App(){
         <ProfileManager onProfileSelect={setSelectedProfile} selectedProfile={selectedProfile} />
         {error && <div style={{color:'#ff6b6b', marginBottom:8}}>{error}</div>}
         <FileUploader onUpload={handleUpload} loading={loading} disabled={false} />
+        
+        {/* Important notice for Vercel deployment */}
+        {import.meta.env.PROD && (
+          <div style={{
+            background: '#1a3a4a',
+            border: '1px solid #2a5a6a',
+            borderRadius: 4,
+            padding: 12,
+            margin: '12px 0',
+            fontSize: 13,
+            lineHeight: 1.5
+          }}>
+            <strong style={{color: '#4fc3f7'}}>ℹ️ Cloud Deployment Note:</strong> After uploading and analyzing a file, 
+            <strong> use the "Save Graph" button</strong> to persist your graphs to the database. 
+            Due to serverless limitations, the raw file data is only available during your upload session. 
+            Saved graphs can be viewed anytime from the "Saved Graphs" section below.
+          </div>
+        )}
       </div>
 
       <TabPanel tabs={['Graphs', 'Parameters', 'Statistics', 'Message Dump']}>
