@@ -192,12 +192,23 @@ def save_graph():
     field_name = data.get('field_name')
     token = data.get('token')
     series_data = data.get('series_data')  # Store actual graph data
-    flight_modes = data.get('flight_modes')  # Store flight modes
+    flight_modes = data.get('flight_modes', [])  # Store flight modes
+    chunk_info = data.get('chunk_info')  # Check if this is a chunked request
     
     if not profile_id or not name or not description:
         return jsonify({'error': 'profile_id, name, and description required'}), 400
     
     try:
+        # If this is a chunked request, store a placeholder for flight_modes
+        # The client will send additional chunks via save_graph_chunk
+        if chunk_info and chunk_info.get('is_chunked'):
+            logger.info(f"Saving graph with chunk {chunk_info.get('chunk_index')} of {chunk_info.get('total_chunks')}")
+            # For chunked saves, only store the metadata and first chunk
+            # Mark it as incomplete for now
+            flight_modes_to_save = flight_modes  # First chunk
+        else:
+            flight_modes_to_save = flight_modes
+        
         saved_graph = mongo_manager.save_graph_to_profile(
             profile_id=profile_id,
             name=name,
@@ -207,7 +218,7 @@ def save_graph():
             field_name=field_name,
             token=token,
             series_data=series_data,
-            flight_modes=flight_modes
+            flight_modes=flight_modes_to_save
         )
         
         if saved_graph:
@@ -216,6 +227,32 @@ def save_graph():
             return jsonify({'error': 'failed to save graph'}), 500
     except Exception as e:
         logger.error(f"Error saving graph: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/save_graph_chunk', methods=['POST', 'OPTIONS'])
+@app.route('/api/save_graph_chunk', methods=['POST', 'OPTIONS'])
+def save_graph_chunk():
+    """Append flight modes chunk to an existing saved graph"""
+    data = request.get_json()
+    graph_id = data.get('graph_id')
+    flight_modes_chunk = data.get('flight_modes_chunk', [])
+    chunk_index = data.get('chunk_index')
+    total_chunks = data.get('total_chunks')
+    
+    if not graph_id:
+        return jsonify({'error': 'graph_id required'}), 400
+    
+    try:
+        logger.info(f"Appending chunk {chunk_index + 1} of {total_chunks} to graph {graph_id}")
+        success = mongo_manager.append_flight_modes_to_graph(graph_id, flight_modes_chunk)
+        
+        if success:
+            return jsonify({'success': True, 'chunk_index': chunk_index}), 200
+        else:
+            return jsonify({'error': 'failed to append chunk'}), 500
+    except Exception as e:
+        logger.error(f"Error appending chunk: {e}")
         return jsonify({'error': str(e)}), 500
 
 

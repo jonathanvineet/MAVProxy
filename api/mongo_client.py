@@ -320,6 +320,24 @@ class MongoManager:
         res = self.db['saved_graphs'].delete_one({'_id': _coerce_object_id(graph_id)})
         return res.deleted_count > 0
 
+    def append_flight_modes_to_graph(self, graph_id: str, flight_modes_chunk: List) -> bool:
+        """Append flight modes chunk to an existing saved graph"""
+        if not self.connected:
+            if graph_id in self._mem_saved_graphs:
+                existing_modes = self._mem_saved_graphs[graph_id].get('flight_modes', [])
+                existing_modes.extend(flight_modes_chunk)
+                self._mem_saved_graphs[graph_id]['flight_modes'] = existing_modes
+                self._save_to_files()
+                return True
+            return False
+        
+        # Use $push with $each to append multiple items
+        res = self.db['saved_graphs'].update_one(
+            {'_id': _coerce_object_id(graph_id)},
+            {'$push': {'flight_modes': {'$each': flight_modes_chunk}}}
+        )
+        return res.modified_count > 0
+
     def get_graphs(self, analysis_id: str) -> List[Dict[str, Any]]:
         if not self.connected:
             return [g for g in self._mem_saved_graphs.values() if g.get('analysis_id') == analysis_id]

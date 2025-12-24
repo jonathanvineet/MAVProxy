@@ -208,8 +208,60 @@ export default {
   },
   
   // Saved Graphs
-  saveGraph: (graphData) => {
-    return client.post('/save_graph', graphData)
+  saveGraph: async (graphData) => {
+    // Check if the payload is too large (> 3MB)
+    const jsonString = JSON.stringify(graphData)
+    const payloadSize = new Blob([jsonString]).size
+    
+    console.log('Graph save payload size:', (payloadSize / 1024 / 1024).toFixed(2), 'MB')
+    
+    // If small enough, send directly
+    if (payloadSize < 3 * 1024 * 1024) {
+      return client.post('/save_graph', graphData)
+    }
+    
+    // Otherwise, use chunked approach
+    console.log('Payload too large, using chunked save')
+    
+    // Split flight_modes into chunks if it exists and is large
+    const maxFlightModesPerChunk = 1000
+    const flightModes = graphData.flight_modes || []
+    const chunks = []
+    
+    for (let i = 0; i < flightModes.length; i += maxFlightModesPerChunk) {
+      chunks.push(flightModes.slice(i, i + maxFlightModesPerChunk))
+    }
+    
+    // If no flight modes, just send the base data
+    if (chunks.length === 0) {
+      return client.post('/save_graph', graphData)
+    }
+    
+    // Send first chunk with all metadata
+    const firstChunkData = {
+      ...graphData,
+      flight_modes: chunks[0],
+      chunk_info: {
+        chunk_index: 0,
+        total_chunks: chunks.length,
+        is_chunked: true
+      }
+    }
+    
+    const response = await client.post('/save_graph', firstChunkData)
+    const graphId = response.data.graph.id
+    
+    // Send remaining chunks
+    for (let i = 1; i < chunks.length; i++) {
+      await client.post('/save_graph_chunk', {
+        graph_id: graphId,
+        flight_modes_chunk: chunks[i],
+        chunk_index: i,
+        total_chunks: chunks.length
+      })
+    }
+    
+    return response
   },
   getSavedGraphs: (profileId) => {
     return client.get(`/profiles/${profileId}/saved_graphs`)
