@@ -79,6 +79,7 @@ class MongoManager:
                 self.db = self.client[db_name]
                 self.connected = True
                 print(f"✅ MongoDB connected to '{db_name}' with TLS")
+                self._ensure_indexes()
             except Exception as tls_err:
                 # Try without TLS for development environments (Codespaces)
                 try:
@@ -95,6 +96,7 @@ class MongoManager:
                     self.db = self.client[db_name]
                     self.connected = True
                     print(f"✅ MongoDB connected to '{db_name}' without TLS (development mode)")
+                    self._ensure_indexes()
                 except Exception as dev_err:
                     print(f"⚠️ All MongoDB connection attempts failed, using file-based storage at {self.data_dir}")
                     print(f"   TLS error: {tls_err}")
@@ -102,6 +104,16 @@ class MongoManager:
                     print(f"   Make sure MongoDB Atlas Network Access allows Vercel IPs (0.0.0.0/0)")
         else:
             print(f"ℹ️ MongoDB not configured; using file-based storage at {self.data_dir}")
+
+    def _ensure_indexes(self):
+        """Ensure indexes exist to avoid large in-memory sorts."""
+        if not self.connected:
+            return
+        try:
+            # Speeds up profile-specific saved graph listing and prevents $sort memory errors
+            self.db['saved_graphs'].create_index([('profile_id', 1), ('created_at', -1)])
+        except Exception as e:
+            print(f"⚠️ Failed to create indexes: {e}")
 
     def _load_from_files(self):
         """Load data from local JSON files"""
@@ -307,7 +319,7 @@ class MongoManager:
     def get_profile_saved_graphs(self, profile_id: str) -> List[Dict[str, Any]]:
         if not self.connected:
             return [g for g in self._mem_saved_graphs.values() if g.get('profile_id') == profile_id]
-        cursor = self.db['saved_graphs'].find({'profile_id': profile_id}).sort('created_at', -1)
+        cursor = self.db['saved_graphs'].find({'profile_id': profile_id}).sort('created_at', -1).allow_disk_use(True)
         return [self._serialize(doc) for doc in cursor]
 
     def delete_saved_graph(self, graph_id: str) -> bool:
