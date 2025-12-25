@@ -492,10 +492,24 @@ def download():
     token = request.args.get('token')
     msg = request.args.get('msg')
     
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
     if not msg:
         return jsonify({'error': 'msg param required'}), 400
+    
+    # Check memory first
+    if token not in UPLOADS:
+        # Try to get from MongoDB
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. Token may have expired or analysis data not available.'
+            }), 400
+        
+        # File not available in serverless environment
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. CSV download requires the original file which is only available immediately after upload in serverless deployments.'
+        }), 400
     
     path = UPLOADS[token]['path']
     analysis = UPLOADS[token]['analysis']
@@ -617,10 +631,24 @@ def graph_eval():
     name = request.args.get('name')
     decimate = int(request.args.get('decimate') or 1)
     
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
     if not name:
         return jsonify({'error': 'name param required'}), 400
+    
+    # Check memory first
+    if token not in UPLOADS:
+        # Try to get from MongoDB
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. Token may have expired or analysis data not available.'
+            }), 400
+        
+        # File not available in serverless environment
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session.'
+        }), 400
     
     try:
         defs = mavexplorer_api.load_graph_definitions()
@@ -650,11 +678,23 @@ def ping():
 def list_messages():
     """List all message types in the log."""
     token = request.args.get('token')
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
     
-    analysis = UPLOADS[token]['analysis']
-    return jsonify({'messages': analysis['messages']})
+    # Check memory first
+    if token in UPLOADS:
+        analysis = UPLOADS[token]['analysis']
+        return jsonify({'messages': analysis['messages']})
+    
+    # Try to get from MongoDB
+    analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+    if not analysis:
+        return jsonify({
+            'error': 'File not found. Token may have expired or analysis data not available.'
+        }), 400
+    
+    analysis_data = analysis.get('analysis_data', {})
+    return jsonify({'messages': analysis_data.get('messages', {})})
 
 @app.route('/dump', methods=['GET'])
 @app.route('/api/dump', methods=['GET'])
@@ -664,10 +704,24 @@ def dump_messages():
     msg_type = request.args.get('type')
     limit = int(request.args.get('limit', 100))
     
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
     if not msg_type:
         return jsonify({'error': 'type param required'}), 400
+    
+    # Check memory first
+    if token not in UPLOADS:
+        # Try to get from MongoDB
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. Token may have expired or analysis data not available.'
+            }), 400
+        
+        # File not available in serverless environment
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Message dump requires the original file.'
+        }), 400
     
     path = UPLOADS[token]['path']
     try:
@@ -693,8 +747,22 @@ def dump_messages():
 def get_stats():
     """Get statistics about the log file."""
     token = request.args.get('token')
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
+    
+    # Check memory first
+    if token not in UPLOADS:
+        # Try to get from MongoDB
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. Token may have expired or analysis data not available.'
+            }), 400
+        
+        # File not available in serverless environment
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Stats require the original file.'
+        }), 400
     
     path = UPLOADS[token]['path']
     analysis = UPLOADS[token]['analysis']
@@ -735,8 +803,22 @@ def get_stats():
 def get_params():
     """Get all parameters from the log file."""
     token = request.args.get('token')
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
+    
+    # Check memory first
+    if token not in UPLOADS:
+        # Try to get from MongoDB
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
+            return jsonify({
+                'error': 'File not found. Token may have expired or analysis data not available.'
+            }), 400
+        
+        # File not available in serverless environment
+        return jsonify({
+            'error': 'Raw file data not available in serverless environment. Parameters require the original file.'
+        }), 400
     
     path = UPLOADS[token]['path']
     try:
@@ -758,30 +840,48 @@ def get_params():
 def get_flight_modes():
     """Extract flight mode changes from the log."""
     token = request.args.get('token')
-    if not token or token not in UPLOADS:
-        return jsonify({'error': 'valid token required'}), 400
+    if not token:
+        return jsonify({'error': 'token required'}), 400
     
-    path = UPLOADS[token]['path']
-    try:
-        mlog = mavutil.mavlink_connection(path)
+    # First check memory (for local/immediate requests)
+    if token in UPLOADS:
+        # Check if we already have flight modes in the analysis data
+        analysis = UPLOADS[token].get('analysis', {})
+        if 'flight_modes' in analysis:
+            return jsonify({'modes': analysis['flight_modes']})
         
-        # Get the flight mode list using mavutil's built-in method
-        flightmodes = mlog.flightmode_list()
-        
-        # Convert to our format: [(mode_name, start_time, end_time), ...]
-        modes = []
-        for (mode_name, t1, t2) in flightmodes:
-            modes.append({
-                'mode': mode_name,
-                'start': t1,
-                'end': t2,
-                'duration': t2 - t1
-            })
-        
-        return jsonify({'modes': modes})
-    except Exception as e:
-        logger.error(f"Failed to extract flight modes: {e}", exc_info=True)
-        return jsonify({'error': 'failed to extract flight modes: ' + str(e)}), 500
+        # Otherwise extract from file
+        path = UPLOADS[token]['path']
+        try:
+            mlog = mavutil.mavlink_connection(path)
+            flightmodes = mlog.flightmode_list()
+            
+            modes = []
+            for (mode_name, t1, t2) in flightmodes:
+                modes.append({
+                    'mode': mode_name,
+                    'start': t1,
+                    'end': t2,
+                    'duration': t2 - t1
+                })
+            
+            return jsonify({'modes': modes})
+        except Exception as e:
+            logger.error(f"Failed to extract flight modes: {e}", exc_info=True)
+            return jsonify({'error': 'failed to extract flight modes: ' + str(e)}), 500
+    
+    # Try to get from MongoDB (for Vercel serverless where memory is lost)
+    analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+    if not analysis:
+        return jsonify({
+            'error': 'File not found. Token may have expired or analysis data not available.'
+        }), 400
+    
+    # Get flight modes from the saved analysis data
+    analysis_data = analysis.get('analysis_data', {})
+    flight_modes = analysis_data.get('flight_modes', [])
+    
+    return jsonify({'modes': flight_modes})
 
 # Export the Flask app for Vercel
 # Vercel's Python runtime expects a variable named 'app' or a function named 'handler'

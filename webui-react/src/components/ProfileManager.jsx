@@ -63,6 +63,7 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
   }
 
   const handleSelectProfile = (profile) => {
+    console.log('[ProfileManager] Selected:', profile)
     onProfileSelect(profile)
   }
 

@@ -3,6 +3,7 @@ import FileUploader from './components/FileUploader'
 import ProfileManager from './components/ProfileManager'
 import OptionsPanel from './components/OptionsPanel'
 import GraphView from './components/GraphView'
+import SavedGraphsPanel from './components/SavedGraphsPanel'
 import TabPanel from './components/TabPanel'
 import ParametersView from './components/ParametersView'
 import StatsView from './components/StatsView'
@@ -130,6 +131,11 @@ export default function App(){
           <MessageDump token={token} analysis={analysis} />
         </div>
       </TabPanel>
+
+      {/* Saved Graphs Panel - Always visible and separate from GraphView */}
+      <div style={{ padding: '16px', background: '#000' }}>
+        <SavedGraphsPanel selectedProfile={selectedProfile} />
+      </div>
     </div>
   )
 }

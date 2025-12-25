@@ -56,6 +56,26 @@ def load_graph_definitions():
         return []
 
 
+def extract_flight_modes(path):
+    """Extract flight mode changes from the log file."""
+    try:
+        mlog = mavutil.mavlink_connection(path)
+        flightmodes = mlog.flightmode_list()
+        
+        modes = []
+        for (mode_name, t1, t2) in flightmodes:
+            modes.append({
+                'mode': mode_name,
+                'start': t1,
+                'end': t2,
+                'duration': t2 - t1
+            })
+        return modes
+    except Exception as e:
+        print(f"Failed to extract flight modes: {e}")
+        return []
+
+
 def analyze_file_basic(path):
     """Scan a log file and return a summary of messages and numeric fields."""
     # Stream the file and only keep counts and a set of numeric fields per message
@@ -85,6 +105,9 @@ def analyze_file_basic(path):
     for name, info in msgs.items():
         fields = sorted(list(info['fields']))
         out['messages'][name] = {'count': info['count'], 'fields': fields}
+    
+    # Also extract flight modes during initial analysis
+    out['flight_modes'] = extract_flight_modes(path)
 
     return out
 

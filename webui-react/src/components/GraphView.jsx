@@ -61,144 +61,6 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   const [graphDescription, setGraphDescription] = useState('')
   const [graphName, setGraphName] = useState('')
   const [saveLoading, setSaveLoading] = useState(false)
-  
-  // Saved graphs state
-  const [savedGraphs, setSavedGraphs] = useState([])
-  const [loadingSavedGraphs, setLoadingSavedGraphs] = useState(false)
-  const [expandedGraphId, setExpandedGraphId] = useState(null)
-  const [expandedGraphData, setExpandedGraphData] = useState(null)
-  const [expandedGraphFlightModes, setExpandedGraphFlightModes] = useState([])
-  const [expandedGraphLoading, setExpandedGraphLoading] = useState(false)
-  const [expandedGraphDecimate, setExpandedGraphDecimate] = useState(1)
-  const [expandedGraphXInterval, setExpandedGraphXInterval] = useState(null)
-  const [expandedGraphYInterval, setExpandedGraphYInterval] = useState(null)
-  const [expandedGraphShowFlightModes, setExpandedGraphShowFlightModes] = useState(true)
-
-  // Reload saved graphs function
-  const reloadSavedGraphs = () => {
-    if (!selectedProfile) return
-    
-    setLoadingSavedGraphs(true)
-    api.getSavedGraphs(selectedProfile.id)
-      .then(res => {
-        setSavedGraphs(res.data.graphs || [])
-      })
-      .catch(err => {
-        console.error('Error loading saved graphs:', err)
-      })
-      .finally(() => setLoadingSavedGraphs(false))
-  }
-
-  // Load saved graphs for selected profile
-  useEffect(() => {
-    if (!selectedProfile) {
-      setSavedGraphs([])
-      return
-    }
-    
-    reloadSavedGraphs()
-  }, [selectedProfile])
-
-  // Handle delete saved graph
-  const handleDeleteSavedGraph = async (graphId) => {
-    if (!window.confirm('Delete this saved graph?')) return
-    
-    try {
-      await api.deleteSavedGraph(graphId)
-      setSavedGraphs(savedGraphs.filter(g => g.id !== graphId))
-    } catch (error) {
-      console.error('Error deleting graph:', error)
-      alert('Failed to delete graph: ' + (error.response?.data?.error || error.message))
-    }
-  }
-
-  // Handle expand saved graph
-  const handleExpandSavedGraph = async (graph) => {
-    if (expandedGraphId === graph.id) {
-      setExpandedGraphId(null)
-      return
-    }
-
-    setExpandedGraphId(graph.id)
-    setExpandedGraphLoading(true)
-    setExpandedGraphData(null)
-    setExpandedGraphFlightModes([])
-    setExpandedGraphDecimate(1)
-    setExpandedGraphXInterval(null)
-    setExpandedGraphYInterval(null)
-    setExpandedGraphShowFlightModes(true)
-
-    try {
-      // Try to use stored data first (series_data and flight_modes)
-      if (graph.series_data && Object.keys(graph.series_data).length > 0) {
-        console.log('Using stored series data from saved graph')
-        console.log('Graph flight_modes:', graph.flight_modes)
-        setExpandedGraphData(graph.series_data)
-        if (graph.flight_modes && graph.flight_modes.length > 0) {
-          console.log('Setting expanded flight modes:', graph.flight_modes)
-          setExpandedGraphFlightModes(graph.flight_modes)
-        } else {
-          console.log('No flight modes found in stored graph data')
-        }
-      } else if (graph.token && graph.message_type && graph.field_name) {
-        // Fallback: fetch data if not stored
-        console.log('Fetching series data for saved graph with token:', graph.token)
-        console.log('Message type:', graph.message_type, 'Field name:', graph.field_name)
-        
-        try {
-          const fields = graph.field_name === 'All' 
-            ? (await api.listMessages(graph.token)).data.messages?.[graph.message_type] || []
-            : graph.field_name.split(',')
-          
-          console.log('Fields to fetch:', fields)
-          
-          const allData = {}
-          const results = await Promise.all(
-            fields.map(async field => {
-              try {
-                console.log(`Fetching timeseries for field: ${field}`)
-                const res = await api.getTimeseries(graph.token, graph.message_type, field)
-                console.log(`Fetched ${field}:`, res.data.series?.length || 0, 'points')
-                allData[field] = res.data.series || []
-                return { field, success: true, points: res.data.series?.length || 0 }
-              } catch(e) {
-                console.error(`Error fetching ${field}:`, e.message, e.response?.data)
-                return { field, success: false, error: e.message }
-              }
-            })
-          )
-          
-          console.log('Fetch results:', results)
-          console.log('All data keys:', Object.keys(allData))
-          console.log('Data fetched:', allData)
-          setExpandedGraphData(allData)
-          
-          // Fetch flight modes
-          try {
-            const modesRes = await api.getFlightModes(graph.token)
-            console.log('Flight modes fetched:', modesRes.data.modes?.length || 0)
-            setExpandedGraphFlightModes(modesRes.data.modes || [])
-          } catch(e) {
-            console.error('Error fetching flight modes:', e.message)
-            // Use the ones from the graph if fetching fails
-            if (graph.flight_modes?.length > 0) {
-              setExpandedGraphFlightModes(graph.flight_modes)
-            }
-          }
-        } catch (error) {
-          console.error('Error in data fetching process:', error)
-          throw error
-        }
-      } else {
-        console.log('No data source available for graph. Token:', !!graph.token, 'Message:', !!graph.message_type, 'Field:', !!graph.field_name)
-      }
-    } catch (error) {
-      console.error('Error loading expanded graph:', error)
-      alert('Failed to load graph: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setExpandedGraphLoading(false)
-    }
-  }
 
   // Load predefined graph
   useEffect(() => {
@@ -207,6 +69,10 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
       if (!token || !predefinedGraph) return
       setLoading(true)
       try {
+        console.group('[PredefinedGraph] Load')
+        console.log('Token present:', !!token)
+        console.log('Graph name:', predefinedGraph.name)
+        console.log('Decimate:', decimate)
         const res = await api.evalGraph(token, predefinedGraph.name, decimate)
         if (!cancelled) {
           const data = {}
@@ -215,12 +81,17 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
               data[expr] = points
             })
           }
+          console.log('Series keys:', Object.keys(data))
+          const totalPoints = Object.values(data).reduce((n, arr) => n + (arr?.length || 0), 0)
+          console.log('Total points:', totalPoints)
           setSeriesData(data)
         }
       } catch(e) {
         console.error('Error loading predefined graph:', e)
+        alert('Failed to load predefined graph: ' + (e.response?.data?.error || e.message))
         if (!cancelled) setSeriesData({})
       } finally {
+        console.groupEnd()
         if (!cancelled) setLoading(false)
       }
     }
@@ -332,8 +203,6 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
       setShowSaveDialog(false)
       setGraphName('')
       setGraphDescription('')
-      // Auto-reload saved graphs
-      reloadSavedGraphs()
     } catch (error) {
       console.error('Error saving graph:', error)
       alert('Failed to save graph: ' + (error.response?.data?.error || error.message))
@@ -381,15 +250,21 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     // Create a map of timestamp to value
     const dataMap = {}
     series.forEach(p => {
-      dataMap[p.t] = p.v
+      const t = p.t ?? p.x
+      const v = p.v ?? p.y
+      if (t !== undefined && v !== undefined) {
+        dataMap[Number(t)] = Number(v)
+      }
     })
     
     // Map labels to values (null if not present)
     const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-    
+     
     // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
     // For custom graphs, use message.field format
     const label = predefinedGraph ? field : `${selected.msg}.${field}`
+     
+    console.log(`[Render] Dataset ${label}:`, { points: values.filter(v => v !== null).length, total: values.length })
     
     return {
       label: label,
@@ -653,186 +528,6 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   }
 
   // Render expanded saved graph
-  const renderExpandedSavedGraph = (graph, data, flightModes, xInt, yInt) => {
-    if (!data) return null
-
-    console.log('renderExpandedSavedGraph called with:')
-    console.log('  - data keys:', Object.keys(data))
-    console.log('  - flightModes:', flightModes)
-    console.log('  - flightModes length:', flightModes?.length)
-
-    const SERIES_COLORS = [
-      'rgb(255, 0, 0)', 'rgb(0, 255, 0)', 'rgb(0, 0, 255)', 'rgb(255, 128, 0)',
-      'rgb(128, 128, 0)', 'rgb(0, 0, 0)', 'rgb(128, 128, 128)', 'rgb(255, 255, 0)'
-    ]
-    
-    // Use the same complete flight mode colors as the main graph
-    const FLIGHT_MODE_COLORS = {
-      'UNKNOWN': 'rgba(255, 192, 203, 0.5)',      // Light pink
-      'MANUAL': 'rgba(144, 238, 144, 0.5)',       // Light green
-      'RTL': 'rgba(173, 216, 230, 0.5)',          // Light blue  
-      'AUTO': 'rgba(176, 224, 230, 0.5)',         // Powder blue
-      'GUIDED': 'rgba(221, 160, 221, 0.5)',       // Plum
-      'LOITER': 'rgba(255, 255, 224, 0.5)',       // Light yellow
-      'STABILIZE': 'rgba(255, 228, 196, 0.5)',    // Bisque
-      'ACRO': 'rgba(255, 218, 185, 0.5)',         // Peach
-      'LAND': 'rgba(255, 160, 122, 0.5)',         // Light salmon
-      'CIRCLE': 'rgba(175, 238, 238, 0.5)',       // Pale turquoise
-      'FBWA': 'rgba(216, 191, 216, 0.5)',         // Thistle
-      'CRUISE': 'rgba(255, 250, 205, 0.5)',       // Lemon chiffon
-    }
-
-    // Normalize series points and coerce timestamps/values to numbers so string timestamps
-    // from MongoDB still align with numeric labels.
-    const normalizePoint = (p) => {
-      if (!p) return null
-      // Support both {t, v} objects and [t, v] arrays
-      if (Array.isArray(p) && p.length >= 2) {
-        const t = Number(p[0])
-        const v = Number(p[1])
-        return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
-      }
-      if (p.t === undefined || p.v === undefined) return null
-      const t = Number(p.t)
-      const v = Number(p.v)
-      return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
-    }
-
-    const allTimestamps = new Set()
-    Object.values(data).forEach(series => {
-      if (Array.isArray(series)) series.forEach(p => {
-        const norm = normalizePoint(p)
-        if (norm) allTimestamps.add(norm.t)
-      })
-    })
-    const labels = Array.from(allTimestamps).sort((a, b) => a - b)
-
-    // Build datasets; saved graphs may store nested objects per message (e.g., data['ATT']={DesPitch:[...], DesRoll:[...]})
-    const datasets = []
-    let colorIdx = 0
-    Object.keys(data).forEach((field) => {
-      const series = data[field]
-      // Case 1: direct array of points
-      if (Array.isArray(series)) {
-        const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
-        colorIdx += 1
-        const dataMap = {}
-        series.forEach(p => {
-          const norm = normalizePoint(p)
-          if (norm) dataMap[norm.t] = norm.v
-        })
-        const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-        datasets.push({
-          label: field,
-          data: values,
-          borderColor: color,
-          backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-          borderWidth: 2,
-          tension: 0.1,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          spanGaps: true
-        })
-        return
-      }
-      // Case 2: nested object of arrays
-      if (series && typeof series === 'object') {
-        Object.keys(series).forEach(sub => {
-          const arr = series[sub]
-          if (!Array.isArray(arr)) return
-          const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
-          colorIdx += 1
-          const dataMap = {}
-          arr.forEach(p => {
-            const norm = normalizePoint(p)
-            if (norm) dataMap[norm.t] = norm.v
-          })
-          const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-          datasets.push({
-            label: `${field}.${sub}`,
-            data: values,
-            borderColor: color,
-            backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-            borderWidth: 2,
-            tension: 0.1,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            spanGaps: true
-          })
-        })
-      }
-    })
-
-    const chartData = { labels, datasets }
-    const minTime = labels[0]
-    const maxTime = labels[labels.length - 1]
-    let xMin, xMax, yMin, yMax
-    if (xInt && minTime && maxTime) {
-      const center = (minTime + maxTime) / 2
-      xMin = Math.max(minTime, center - xInt / 2)
-      xMax = Math.min(maxTime, center + xInt / 2)
-    }
-    if (yInt) { yMin = -yInt; yMax = yInt }
-
-    // Build flight mode annotations
-    const annotations = {}
-    if (flightModes && flightModes.length > 0) {
-      console.log('Building annotations for', flightModes.length, 'flight modes')
-      flightModes.forEach((fm, idx) => {
-        const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        console.log(`  Mode ${idx}: ${fm.mode} from ${fm.start} to ${fm.end}, color: ${color}`)
-        annotations[`mode-${idx}`] = {
-          type: 'box',
-          xMin: fm.start,
-          xMax: fm.end,
-          yMin: 'min',
-          yMax: 'max',
-          backgroundColor: color,
-          borderWidth: 0,
-          drawTime: 'beforeDatasetsDraw'
-        }
-      })
-      console.log('Final annotations object:', annotations)
-    } else {
-      console.log('No flight modes to annotate')
-    }
-
-    const chartOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: { labels: { color: '#fff' }, position: 'top' },
-        annotation: { annotations },
-        tooltip: {
-          callbacks: {
-            filter: function(tooltipItem) {
-              // Only show tooltip for valid data points
-              return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
-            }
-          }
-        }
-      },
-      scales: {
-        x: { 
-          type: 'linear',
-          ticks: { color: '#888' }, 
-          grid: { color: 'rgba(255,255,255,0.1)' }, 
-          min: xMin, 
-          max: xMax 
-        },
-        y: { 
-          ticks: { color: '#888' }, 
-          grid: { color: 'rgba(255,255,255,0.1)' }, 
-          min: yMin, 
-          max: yMax 
-        }
-      },
-      interaction: { mode: 'index', intersect: false }
-    }
-
-    return <Line data={chartData} options={chartOptions} />
-  }
 
   const renderChart = (isFullscreen = false) => (
     <div 
@@ -874,6 +569,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#000', padding: '12px', borderRadius: '4px' }}>
+        {/* Graph Controls */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
           <h4 style={{ margin: 0, paddingTop: 6, color: '#fff' }}>
             {predefinedGraph ? predefinedGraph.name : `${selected.msg} · ${selected.field === 'All' ? 'All Fields' : selected.field}`}
@@ -1078,175 +774,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
             </div>
           </div>
         )}
-      </div>
 
-      {/* Saved Graphs Panel */}
-      {selectedProfile && (
-        <div style={{
-          marginTop: 20,
-          background: '#1a1a1a',
-          border: '1px solid #333',
-          borderRadius: 6,
-          padding: 16,
-          color: '#fff'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h4 style={{ margin: 0, color: '#fff' }}>📊 Saved Graphs for "{selectedProfile.name}"</h4>
-            {loadingSavedGraphs && <span style={{ fontSize: 11, color: '#888' }}>Loading…</span>}
-          </div>
-          
-          {savedGraphs.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>
-              No saved graphs yet. Save a graph above to add one.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {savedGraphs.map(graph => (
-                <div key={graph.id}>
-                  <div 
-                    onClick={() => handleExpandSavedGraph(graph)}
-                    style={{
-                      background: expandedGraphId === graph.id ? '#1a3a3a' : '#2a2a2a',
-                      border: expandedGraphId === graph.id ? '1px solid #0a7ea4' : '1px solid #444',
-                      borderRadius: 4,
-                      padding: 10,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      gap: 10,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0a7ea4' }}>
-                        {expandedGraphId === graph.id ? '▼' : '▶'} {graph.name}
-                      </div>
-                      <div style={{ fontSize: 11, color: '#ccc', marginTop: 4 }}>
-                        {graph.description}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#666', marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        {graph.graph_type && <span>Type: {graph.graph_type}</span>}
-                        {graph.message_type && <span>Message: {graph.message_type}</span>}
-                        {graph.field_name && <span>Field: {graph.field_name}</span>}
-                        {graph.created_at && (
-                          <span>
-                            Created: {new Date(graph.created_at).toLocaleDateString()} {new Date(graph.created_at).toLocaleTimeString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeleteSavedGraph(graph.id)
-                      }}
-                      style={{
-                        fontSize: 11,
-                        padding: '4px 8px',
-                        cursor: 'pointer',
-                        background: '#8b4545',
-                        color: '#fff',
-                        border: '1px solid #a55555',
-                        borderRadius: 3,
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      🗑️ Delete
-                    </button>
-                  </div>
 
-                  {/* Expanded graph view */}
-                  {expandedGraphId === graph.id && (
-                    <div style={{
-                      background: '#1a1a1a',
-                      border: '1px solid #0a7ea4',
-                      borderTop: 'none',
-                      borderRadius: '0 0 4px 4px',
-                      padding: 12,
-                      marginTop: -1
-                    }}>
-                      {expandedGraphLoading ? (
-                        <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
-                          Loading graph data…
-                        </div>
-                      ) : expandedGraphData ? (
-                        <div>
-                          {/* Graph controls */}
-                          <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <label style={{ fontSize: 12, color: '#fff' }}>X-Axis:</label>
-                              <select
-                                value={expandedGraphXInterval || ''}
-                                onChange={(e) => setExpandedGraphXInterval(e.target.value ? Number(e.target.value) : null)}
-                                style={{
-                                  fontSize: 11,
-                                  padding: '4px 8px',
-                                  background: '#2a2a2a',
-                                  color: '#fff',
-                                  border: '1px solid #555',
-                                  borderRadius: 3,
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <option value="">All Data</option>
-                                <option value="10">10 seconds</option>
-                                <option value="30">30 seconds</option>
-                                <option value="60">1 minute</option>
-                                <option value="300">5 minutes</option>
-                                <option value="600">10 minutes</option>
-                              </select>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <label style={{ fontSize: 12, color: '#fff' }}>Y-Axis:</label>
-                              <select
-                                value={expandedGraphYInterval || ''}
-                                onChange={(e) => setExpandedGraphYInterval(e.target.value ? Number(e.target.value) : null)}
-                                style={{
-                                  fontSize: 11,
-                                  padding: '4px 8px',
-                                  background: '#2a2a2a',
-                                  color: '#fff',
-                                  border: '1px solid #555',
-                                  borderRadius: 3,
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <option value="">Auto Scale</option>
-                                <option value="10">±10</option>
-                                <option value="50">±50</option>
-                                <option value="100">±100</option>
-                                <option value="500">±500</option>
-                              </select>
-                            </div>
-                            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff', cursor: 'pointer' }}>
-                              <input 
-                                type="checkbox" 
-                                checked={expandedGraphShowFlightModes}
-                                onChange={(e) => setExpandedGraphShowFlightModes(e.target.checked)}
-                              />
-                              Show Flight Modes
-                            </label>
-                          </div>
-
-                          {/* Expanded chart - reuse chart logic */}
-                          <div style={{ background: '#000', padding: 12, borderRadius: 4, height: 300, position: 'relative' }}>
-                            {renderExpandedSavedGraph(graph, expandedGraphData, expandedGraphShowFlightModes ? expandedGraphFlightModes : [], expandedGraphXInterval, expandedGraphYInterval)}
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
-                          Failed to load graph data
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Fullscreen overlay */}
       {fullscreen && (
@@ -1374,7 +903,8 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
           </div>
         </div>
       )}
-      
+      </div>
+
       {/* Save Graph Dialog */}
       {showSaveDialog && (
         <div 
