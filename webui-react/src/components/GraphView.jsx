@@ -5,6 +5,7 @@ import annotationPlugin from 'chartjs-plugin-annotation'
 import zoomPlugin from 'chartjs-plugin-zoom'
 Chart.register(...registerables, annotationPlugin, zoomPlugin)
 import api from '../api'
+import GraphAIChat from './GraphAIChat'
 
 // Flight mode colors matching desktop MAVExplorer - solid colors for regions
 const FLIGHT_MODE_COLORS = {
@@ -61,6 +62,9 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   const [graphDescription, setGraphDescription] = useState('')
   const [graphName, setGraphName] = useState('')
   const [saveLoading, setSaveLoading] = useState(false)
+  
+  // AI Chat state
+  const [showAIChat, setShowAIChat] = useState(false)
 
   // Load predefined graph
   useEffect(() => {
@@ -680,6 +684,24 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
               Reset View
             </button>
             
+            {/* AI Chat Button */}
+            <button 
+              onClick={() => setShowAIChat(!showAIChat)}
+              style={{ 
+                fontSize: 11, 
+                padding: '4px 8px',
+                cursor: 'pointer',
+                background: showAIChat ? '#4CAF50' : '#0a7ea4',
+                color: '#fff',
+                border: showAIChat ? '1px solid #66BB6A' : '1px solid #0d99c6',
+                borderRadius: 3,
+                fontWeight: 'bold'
+              }}
+              title="Ask AI about this graph"
+            >
+              🤖 {showAIChat ? 'Close AI' : 'Ask AI'}
+            </button>
+            
             {/* Save Graph Button */}
             {selectedProfile && (
               <>
@@ -1082,6 +1104,16 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
           </div>
         </div>
       )}
+      
+      {/* AI Chat Panel */}
+      <GraphAIChat 
+        seriesData={seriesData}
+        flightModes={flightModes}
+        graphName={predefinedGraph ? predefinedGraph.name : `${selected.msg}.${selected.field}`}
+        analysis={analysis}
+        isVisible={showAIChat}
+        onClose={() => setShowAIChat(false)}
+      />
     </>
   )
 }

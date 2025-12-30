@@ -279,6 +279,11 @@ export default {
   },
   deleteSavedGraph: (graphId) => {
     return client.delete(`/saved_graphs/${graphId}`)
+  },
+  
+  // AI Chat - uses Google Gemini API
+  sendAIMessage: (messages) => {
+    return client.post('/ai/chat', { messages })
   }
 }
 

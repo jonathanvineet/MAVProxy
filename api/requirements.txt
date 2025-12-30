@@ -6,3 +6,4 @@ python-dotenv
 requests
 pymongo
 certifi
+google-genai

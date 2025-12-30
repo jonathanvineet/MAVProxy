@@ -883,6 +883,85 @@ def get_flight_modes():
     
     return jsonify({'modes': flight_modes})
 
+# AI Chat endpoint - uses Google Gemini API (new google-genai package)
+@app.route('/ai/chat', methods=['POST', 'OPTIONS'])
+@app.route('/api/ai/chat', methods=['POST', 'OPTIONS'])
+def ai_chat():
+    """Proxy Google Gemini API requests from frontend - handles CORS properly"""
+    try:
+        from google import genai
+    except ImportError:
+        return jsonify({'error': 'google-genai library not installed. Run: pip install -q -U google-genai'}), 500
+    
+    # Get Gemini API key from environment
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        logger.error("GEMINI_API_KEY not set in environment variables")
+        return jsonify({'error': 'Gemini API key not configured on server'}), 500
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No request body provided'}), 400
+        
+        messages = data.get('messages', [])
+        if not messages:
+            return jsonify({'error': 'No messages provided'}), 400
+        
+        # Create Gemini client with API key
+        client = genai.Client(api_key=api_key)
+        
+        # Convert messages to Gemini format
+        # Extract text content from messages, filter out system messages
+        gemini_contents = []
+        for msg in messages:
+            role = msg.get('role')
+            if role == 'system':
+                # Prepend system context to first user message
+                continue
+            
+            content = msg.get('content', '')
+            if not content:
+                continue
+            
+            # Map user/assistant to user/model for Gemini
+            gemini_role = 'user' if role == 'user' else 'model'
+            gemini_contents.append({
+                'role': gemini_role,
+                'parts': [{'text': content}]
+            })
+        
+        if not gemini_contents:
+            return jsonify({'error': 'No valid messages to process'}), 400
+        
+        # Send request to Gemini API
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=gemini_contents
+        )
+        
+        return jsonify({
+            'choices': [{
+                'message': {
+                    'role': 'assistant',
+                    'content': response.text
+                }
+            }]
+        })
+        
+    except Exception as e:
+        logger.error(f"AI Chat API Error: {e}", exc_info=True)
+        error_msg = str(e)
+        
+        # Check for specific Gemini errors
+        if 'api_key' in error_msg.lower() or 'authentication' in error_msg.lower():
+            return jsonify({'error': 'Gemini API key is invalid or expired'}), 401
+        elif 'quota' in error_msg.lower() or 'resource_exhausted' in error_msg.lower():
+            return jsonify({'error': 'Rate limited or quota exceeded. Please try again later.'}), 429
+        else:
+            return jsonify({'error': f'Gemini API error: {error_msg}'}), 500
+
+
 # Export the Flask app for Vercel
 # Vercel's Python runtime expects a variable named 'app' or a function named 'handler'
 app = app
