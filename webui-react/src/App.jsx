@@ -4,6 +4,7 @@ import ProfileManager from './components/ProfileManager'
 import OptionsPanel from './components/OptionsPanel'
 import GraphView from './components/GraphView'
 import SavedGraphsPanel from './components/SavedGraphsPanel'
+import ComparisonView from './components/ComparisonView'
 import TabPanel from './components/TabPanel'
 import ParametersView from './components/ParametersView'
 import StatsView from './components/StatsView'
@@ -19,6 +20,17 @@ export default function App(){
   const [predefinedGraph, setPredefinedGraph] = useState(null)
   const [error, setError] = useState(null)
   const [selectedProfile, setSelectedProfile] = useState(null)
+  const [allProfiles, setAllProfiles] = useState([])
+
+  // Fetch all profiles on mount for ComparisonView
+  useEffect(() => {
+    api.getProfiles()
+      .then(res => {
+        const profiles = Array.isArray(res.data) ? res.data : (res.data.profiles || [])
+        setAllProfiles(profiles)
+      })
+      .catch(err => console.error('Failed to load profiles:', err))
+  }, [])
 
   async function handleUpload(file, options, onProgress){
     setLoading(true)
@@ -135,6 +147,11 @@ export default function App(){
       {/* Saved Graphs Panel - Always visible and separate from GraphView */}
       <div style={{ padding: '16px', background: '#000' }}>
         <SavedGraphsPanel selectedProfile={selectedProfile} />
+      </div>
+
+      {/* Comparison View - Side-by-side graph comparison */}
+      <div style={{ padding: '16px', background: '#000' }}>
+        <ComparisonView allProfiles={allProfiles} />
       </div>
     </div>
   )
