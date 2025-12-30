@@ -8,6 +8,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
   const [expandedGraphIds, setExpandedGraphIds] = useState(new Set())
   const [expandedGraphsData, setExpandedGraphsData] = useState({}) // Map of graphId -> { data, flightModes, loading, xInterval, yInterval, showFlightModes }
   const savedPanelRef = useRef(null)
+  const chartRefs = useRef({}) // Store chart refs by graphId
 
   const FLIGHT_MODE_COLORS = {
     'UNKNOWN': 'rgba(255, 192, 203, 0.5)',
@@ -90,6 +91,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       const newData = { ...expandedGraphsData }
       delete newData[graph.id]
       setExpandedGraphsData(newData)
+      // Clean up ref
+      delete chartRefs.current[graph.id]
       return
     }
 
@@ -97,6 +100,11 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     const newSet = new Set(expandedGraphIds)
     newSet.add(graph.id)
     setExpandedGraphIds(newSet)
+    
+    // Initialize ref for this graph
+    if (!chartRefs.current[graph.id]) {
+      chartRefs.current[graph.id] = React.createRef()
+    }
     
     // Mark as loading
     const newData = { ...expandedGraphsData }
@@ -133,7 +141,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
   }
 
   // Render saved graph
-  const renderExpandedSavedGraph = (graph, data, flightModes, xInterval = null, yInterval = null) => {
+  const renderExpandedSavedGraph = (graph, data, flightModes, xInterval = null, yInterval = null, chartRef = null) => {
     if (!data) return null
 
     const SERIES_COLORS = [
@@ -298,7 +306,41 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       interaction: { mode: 'index', intersect: false }
     }
 
-    return <Line data={chartData} options={chartOptions} />
+    return <Line data={chartData} options={chartOptions} ref={chartRef} />
+  }
+
+  const handleExportGraphAsPNG = (graph) => {
+    const chartRef = chartRefs.current[graph.id]
+    if (!chartRef) {
+      alert('Chart reference not found. Please wait a moment and try again.')
+      return
+    }
+    
+    // Try different paths to access the canvas
+    let canvas = null
+    if (chartRef.canvas) {
+      canvas = chartRef.canvas
+    } else if (chartRef.current && chartRef.current.canvas) {
+      canvas = chartRef.current.canvas
+    } else if (chartRef.current && chartRef.current._canvas) {
+      canvas = chartRef.current._canvas
+    } else if (chartRef._canvas) {
+      canvas = chartRef._canvas
+    }
+    
+    if (!canvas) {
+      console.error('Could not find canvas. Available properties:', Object.keys(chartRef))
+      alert('Chart is not ready. Please wait a moment and try again.')
+      return
+    }
+    
+    const link = document.createElement('a')
+    link.href = canvas.toDataURL('image/png')
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+    link.download = `${graph.name}_${timestamp}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   if (!selectedProfile) {
@@ -479,9 +521,24 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                           Flight Modes
                         </label>
                       </div>
-                      <div style={{ height: 400, position: 'relative' }}>
-                        {renderExpandedSavedGraph(graph, expandedGraphsData[graph.id].data, expandedGraphsData[graph.id].showFlightModes ? expandedGraphsData[graph.id].flightModes : [], expandedGraphsData[graph.id].xInterval, expandedGraphsData[graph.id].yInterval)}
+                      <div style={{ height: 400, position: 'relative', marginBottom: 12 }}>
+                        {renderExpandedSavedGraph(graph, expandedGraphsData[graph.id].data, expandedGraphsData[graph.id].showFlightModes ? expandedGraphsData[graph.id].flightModes : [], expandedGraphsData[graph.id].xInterval, expandedGraphsData[graph.id].yInterval, chartRefs.current[graph.id])}
                       </div>
+                      <button
+                        onClick={() => handleExportGraphAsPNG(graph)}
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 12px',
+                          cursor: 'pointer',
+                          background: '#0a7ea4',
+                          color: '#fff',
+                          border: '1px solid #0d99c6',
+                          borderRadius: 3,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        💾 Save as PNG
+                      </button>
                     </div>
                   ) : (
                     <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
