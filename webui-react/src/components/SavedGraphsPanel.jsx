@@ -5,13 +5,8 @@ import api from '../api'
 export default function SavedGraphsPanel({ selectedProfile }) {
   const [savedGraphs, setSavedGraphs] = useState([])
   const [loadingSavedGraphs, setLoadingSavedGraphs] = useState(false)
-  const [expandedGraphId, setExpandedGraphId] = useState(null)
-  const [expandedGraphData, setExpandedGraphData] = useState(null)
-  const [expandedGraphFlightModes, setExpandedGraphFlightModes] = useState([])
-  const [expandedGraphLoading, setExpandedGraphLoading] = useState(false)
-  const [expandedGraphXInterval, setExpandedGraphXInterval] = useState(null)
-  const [expandedGraphYInterval, setExpandedGraphYInterval] = useState(null)
-  const [expandedGraphShowFlightModes, setExpandedGraphShowFlightModes] = useState(true)
+  const [expandedGraphIds, setExpandedGraphIds] = useState(new Set())
+  const [expandedGraphsData, setExpandedGraphsData] = useState({}) // Map of graphId -> { data, flightModes, loading, xInterval, yInterval, showFlightModes }
   const savedPanelRef = useRef(null)
 
   const FLIGHT_MODE_COLORS = {
@@ -83,43 +78,62 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     }
   }
 
-  // Handle expand saved graph
+  // Handle expand saved graph - support multiple
   const handleExpandSavedGraph = async (graph) => {
-    if (expandedGraphId === graph.id) {
-      setExpandedGraphId(null)
+    const isExpanded = expandedGraphIds.has(graph.id)
+    
+    if (isExpanded) {
+      // Close it
+      const newSet = new Set(expandedGraphIds)
+      newSet.delete(graph.id)
+      setExpandedGraphIds(newSet)
+      const newData = { ...expandedGraphsData }
+      delete newData[graph.id]
+      setExpandedGraphsData(newData)
       return
     }
 
-    setExpandedGraphId(graph.id)
-    setExpandedGraphLoading(true)
-    setExpandedGraphData(null)
-    setExpandedGraphFlightModes([])
-    setExpandedGraphXInterval(null)
-    setExpandedGraphYInterval(null)
-    setExpandedGraphShowFlightModes(true)
+    // Open it
+    const newSet = new Set(expandedGraphIds)
+    newSet.add(graph.id)
+    setExpandedGraphIds(newSet)
+    
+    // Mark as loading
+    const newData = { ...expandedGraphsData }
+    newData[graph.id] = {
+      data: null,
+      flightModes: [],
+      loading: true,
+      xInterval: null,
+      yInterval: null,
+      showFlightModes: true
+    }
+    setExpandedGraphsData(newData)
 
     try {
       // Use stored data first
       if (graph.series_data && Object.keys(graph.series_data).length > 0) {
         console.log('Using stored series data from saved graph')
-        setExpandedGraphData(graph.series_data)
+        newData[graph.id].data = graph.series_data
         if (graph.flight_modes && graph.flight_modes.length > 0) {
-          setExpandedGraphFlightModes(graph.flight_modes)
+          newData[graph.id].flightModes = graph.flight_modes
         }
       } else {
         console.log('No stored data in graph')
-        setExpandedGraphData({})
+        newData[graph.id].data = {}
       }
+      newData[graph.id].loading = false
+      setExpandedGraphsData(newData)
     } catch (error) {
       console.error('Error loading expanded graph:', error)
       alert('Failed to load graph: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setExpandedGraphLoading(false)
+      newData[graph.id].loading = false
+      setExpandedGraphsData(newData)
     }
   }
 
   // Render saved graph
-  const renderExpandedSavedGraph = (graph, data, flightModes) => {
+  const renderExpandedSavedGraph = (graph, data, flightModes, xInterval = null, yInterval = null) => {
     if (!data) return null
 
     const SERIES_COLORS = [
@@ -220,12 +234,12 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     const minTime = labels[0]
     const maxTime = labels[labels.length - 1]
     let xMin, xMax, yMin, yMax
-    if (expandedGraphXInterval && minTime && maxTime) {
+    if (xInterval && minTime && maxTime) {
       const center = (minTime + maxTime) / 2
-      xMin = Math.max(minTime, center - expandedGraphXInterval / 2)
-      xMax = Math.min(maxTime, center + expandedGraphXInterval / 2)
+      xMin = Math.max(minTime, center - xInterval / 2)
+      xMax = Math.min(maxTime, center + xInterval / 2)
     }
-    if (expandedGraphYInterval) { yMin = -expandedGraphYInterval; yMax = expandedGraphYInterval }
+    if (yInterval) { yMin = -yInterval; yMax = yInterval }
 
     const annotations = {}
     if (flightModes && flightModes.length > 0) {
@@ -262,7 +276,14 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       scales: {
         x: { 
           type: 'linear',
-          ticks: { color: '#888' }, 
+          ticks: { 
+            color: '#888',
+            maxTicksLimit: 12,
+            callback: function(value) {
+              const date = new Date(value * 1000)
+              return date.toTimeString().split(' ')[0]
+            }
+          }, 
           grid: { color: 'rgba(255,255,255,0.1)' }, 
           min: xMin, 
           max: xMax 
@@ -326,8 +347,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
               <div 
                 onClick={() => handleExpandSavedGraph(graph)}
                 style={{
-                  background: expandedGraphId === graph.id ? '#1a3a3a' : '#2a2a2a',
-                  border: expandedGraphId === graph.id ? '1px solid #0a7ea4' : '1px solid #444',
+                  background: expandedGraphIds.has(graph.id) ? '#1a3a3a' : '#2a2a2a',
+                  border: expandedGraphIds.has(graph.id) ? '1px solid #0a7ea4' : '1px solid #444',
                   borderRadius: 4,
                   padding: 10,
                   display: 'flex',
@@ -340,7 +361,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0a7ea4' }}>
-                    {expandedGraphId === graph.id ? '▼' : '▶'} {graph.name}
+                    {expandedGraphIds.has(graph.id) ? '▼' : '▶'} {graph.name}
                   </div>
                   <div style={{ fontSize: 11, color: '#ccc', marginTop: 4 }}>
                     {graph.description}
@@ -376,7 +397,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                 </button>
               </div>
 
-              {expandedGraphId === graph.id && (
+              {expandedGraphIds.has(graph.id) && expandedGraphsData[graph.id] && (
                 <div style={{
                   background: '#1a1a1a',
                   border: '1px solid #0a7ea4',
@@ -385,18 +406,22 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                   padding: 12,
                   marginTop: -1
                 }}>
-                  {expandedGraphLoading ? (
+                  {expandedGraphsData[graph.id].loading ? (
                     <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
                       Loading graph data…
                     </div>
-                  ) : expandedGraphData ? (
+                  ) : expandedGraphsData[graph.id].data ? (
                     <div>
                       <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <label style={{ fontSize: 12, color: '#fff' }}>X-Axis:</label>
                           <select
-                            value={expandedGraphXInterval || ''}
-                            onChange={(e) => setExpandedGraphXInterval(e.target.value ? Number(e.target.value) : null)}
+                            value={expandedGraphsData[graph.id].xInterval || ''}
+                            onChange={(e) => {
+                              const newData = { ...expandedGraphsData }
+                              newData[graph.id].xInterval = e.target.value ? Number(e.target.value) : null
+                              setExpandedGraphsData(newData)
+                            }}
                             style={{
                               fontSize: 11,
                               padding: '4px 8px',
@@ -418,8 +443,12 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <label style={{ fontSize: 12, color: '#fff' }}>Y-Axis:</label>
                           <select
-                            value={expandedGraphYInterval || ''}
-                            onChange={(e) => setExpandedGraphYInterval(e.target.value ? Number(e.target.value) : null)}
+                            value={expandedGraphsData[graph.id].yInterval || ''}
+                            onChange={(e) => {
+                              const newData = { ...expandedGraphsData }
+                              newData[graph.id].yInterval = e.target.value ? Number(e.target.value) : null
+                              setExpandedGraphsData(newData)
+                            }}
                             style={{
                               fontSize: 11,
                               padding: '4px 8px',
@@ -440,14 +469,18 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                         <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff' }}>
                           <input 
                             type="checkbox" 
-                            checked={expandedGraphShowFlightModes} 
-                            onChange={e => setExpandedGraphShowFlightModes(e.target.checked)}
+                            checked={expandedGraphsData[graph.id].showFlightModes}
+                            onChange={e => {
+                              const newData = { ...expandedGraphsData }
+                              newData[graph.id].showFlightModes = e.target.checked
+                              setExpandedGraphsData(newData)
+                            }}
                           />
                           Flight Modes
                         </label>
                       </div>
                       <div style={{ height: 400, position: 'relative' }}>
-                        {renderExpandedSavedGraph(graph, expandedGraphData, expandedGraphShowFlightModes ? expandedGraphFlightModes : [])}
+                        {renderExpandedSavedGraph(graph, expandedGraphsData[graph.id].data, expandedGraphsData[graph.id].showFlightModes ? expandedGraphsData[graph.id].flightModes : [], expandedGraphsData[graph.id].xInterval, expandedGraphsData[graph.id].yInterval)}
                       </div>
                     </div>
                   ) : (

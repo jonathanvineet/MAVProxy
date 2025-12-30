@@ -156,6 +156,48 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
     }
   }, [token])
 
+
+  const handleExportGraphAsPNG = () => {
+    try {
+      if (!chartRef.current) {
+        alert('Chart is not ready. Please wait for the graph to load.')
+        return
+      }
+
+      // For react-chartjs-2, the ref points to the Chart.js instance
+      // The canvas is accessible via chartRef.current.canvas or through the chart object
+      let canvas = null
+      
+      if (chartRef.current.canvas) {
+        canvas = chartRef.current.canvas
+      } else if (chartRef.current.ctx && chartRef.current.ctx.canvas) {
+        canvas = chartRef.current.ctx.canvas
+      } else {
+        alert('Unable to access chart canvas. Please try again.')
+        return
+      }
+      
+      const image = canvas.toDataURL('image/png')
+      const link = document.createElement('a')
+      
+      // Create filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+      const filename = predefinedGraph 
+        ? `${predefinedGraph.name}_${timestamp}.png`
+        : `${selected.msg}_${selected.field}_${timestamp}.png`
+      
+      link.href = image
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      console.log('Graph exported as PNG:', filename)
+    } catch (error) {
+      console.error('Error exporting PNG:', error)
+      alert('Failed to export graph: ' + error.message)
+    }
+  }
+
   // Save graph handler
   const handleSaveGraph = async () => {
     if (!selectedProfile) {
@@ -640,21 +682,39 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
             
             {/* Save Graph Button */}
             {selectedProfile && (
-              <button 
-                onClick={() => setShowSaveDialog(true)}
-                style={{ 
-                  fontSize: 11, 
-                  padding: '4px 8px',
-                  cursor: 'pointer',
-                  background: '#0a7ea4',
-                  color: '#fff',
-                  border: '1px solid #0d99c6',
-                  borderRadius: 3,
-                  fontWeight: 'bold'
-                }}
-              >
-                💾 Save Graph
-              </button>
+              <>
+                <button 
+                  onClick={() => setShowSaveDialog(true)}
+                  style={{ 
+                    fontSize: 11, 
+                    padding: '4px 8px',
+                    cursor: 'pointer',
+                    background: '#0a7ea4',
+                    color: '#fff',
+                    border: '1px solid #0d99c6',
+                    borderRadius: 3,
+                    fontWeight: 'bold'
+                  }}
+                >
+                  💾 Save Graph
+                </button>
+                
+                <button 
+                  onClick={handleExportGraphAsPNG}
+                  style={{ 
+                    fontSize: 11, 
+                    padding: '4px 8px',
+                    cursor: 'pointer',
+                    background: '#0a7ea4',
+                    color: '#fff',
+                    border: '1px solid #0d99c6',
+                    borderRadius: 3,
+                    fontWeight: 'bold'
+                  }}
+                >
+                  🖼️ Export PNG
+                </button>
+              </>
             )}
             
             <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff' }}>
