@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
 import api from '../api'
+import html2canvas from 'html2canvas'
 
-export default function GraphAIChat({ seriesData, flightModes, graphName, analysis, isVisible, onClose }) {
+export default function GraphAIChat({ seriesData, flightModes, graphName, analysis, isVisible, onClose, chartRef }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,6 +13,31 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  // Parse markdown bold syntax (**text**) to actual bold formatting
+  const formatMessage = (text) => {
+    const parts = []
+    let lastIndex = 0
+    const regex = /\*\*(.+?)\*\*/g
+    let match
+
+    while ((match = regex.exec(text)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push({ text: text.slice(lastIndex, match.index), bold: false })
+      }
+      // Add the bold text
+      parts.push({ text: match[1], bold: true })
+      lastIndex = regex.lastIndex
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push({ text: text.slice(lastIndex), bold: false })
+    }
+
+    return parts.length > 0 ? parts : [{ text, bold: false }]
   }
 
   useEffect(() => {
@@ -25,22 +51,8 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
     }
   }, [isVisible, isInitialized])
 
-  // Reset initialization when graph changes
-  useEffect(() => {
-    setIsInitialized(false)
-    setMessages([])
-  }, [graphName, seriesData])
-
   const initializeAgent = async () => {
     setIsInitialized(true)
-    
-    // Just set a simple ready message - don't call AI yet
-    const systemMessage = {
-      role: 'assistant',
-      content: `🤖 **Agent Ready**\n\nI've analyzed your quadcopter telemetry data:\n• **${Object.keys(seriesData).length}** data series\n• **${flightModes?.length || 0}** flight mode changes\n• Graph: **${graphName || 'Custom Graph'}**\n\nAsk me anything about attitude, battery, altitude, sensors, or flight behavior!`
-    }
-    
-    setMessages([systemMessage])
   }
 
   const prepareGraphContext = () => {
@@ -76,6 +88,105 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
     }
   }
 
+  const autoAnalyzeGraph = async () => {
+    if (loading) return
+
+    // Rate limiting
+    const now = Date.now()
+    const timeSinceLastRequest = now - lastRequestTime
+    const MIN_REQUEST_INTERVAL = 3000
+
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      const remainingTime = Math.ceil((MIN_REQUEST_INTERVAL - timeSinceLastRequest) / 1000)
+      setRateLimitError(true)
+      const errorMessage = {
+        role: 'assistant',
+        content: `⏱️ **Please wait**: ${remainingTime}s before analyzing another graph`
+      }
+      setMessages(prev => [...prev, errorMessage])
+      return
+    }
+
+    setRateLimitError(false)
+    setLastRequestTime(now)
+
+    // Add user message showing which graph is being analyzed
+    const userMessage = { 
+      role: 'user', 
+      content: `📊 Analyze: ${graphName || 'Custom Graph'}` 
+    }
+    setMessages(prev => [...prev, userMessage])
+    setLoading(true)
+
+    try {
+      // Capture the graph as an image
+      if (!chartRef?.current) {
+        throw new Error('Graph not available for capture')
+      }
+
+      console.log('📸 Capturing graph as image...')
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: '#1a1a1a',
+        scale: 2,
+        logging: false
+      })
+      
+      const imageBase64 = canvas.toDataURL('image/png').split(',')[1]
+      console.log('✅ Graph captured, image size:', Math.round(imageBase64.length / 1024), 'KB')
+
+      const systemPrompt = `You are analyzing a UAV/drone flight telemetry graph. Output ONLY this format:
+
+**What the graph shows**
+- [observation 1]
+- [observation 2]
+
+**✅ What this means**
+- [diagnosis 1]
+- [diagnosis 2]
+
+**🔧 Suggestions**
+🔹 [action 1]
+🔹 [action 2]
+
+Keep under 100 words. NO extra explanations.`
+
+      // Gemini API format per official docs: flat array of text and inlineData objects
+      const conversationMessages = [
+        { text: systemPrompt + `\n\nAnalyze this telemetry graph: ${graphName || 'Custom Graph'}` },
+        {
+          inlineData: {
+            mimeType: 'image/png',
+            data: imageBase64
+          }
+        }
+      ]
+
+      const response = await api.sendAIMessage(conversationMessages)
+
+      const assistantMessage = {
+        role: 'assistant',
+        content: response.data.choices[0].message.content
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+    } catch (error) {
+      console.error('AI API Error:', error)
+      let errorContent = `❌ **Error**: ${error.response?.data?.error || error.message || 'Failed to analyze graph'}`
+      
+      if (error.response?.status === 429) {
+        errorContent = `⏱️ **Rate Limited**: Gemini API limit reached. Please wait a moment and try again.`
+      }
+      
+      const errorMessage = {
+        role: 'assistant',
+        content: errorContent
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const sendMessage = async () => {
     if (!input.trim() || loading) return
 
@@ -107,60 +218,37 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
       const context = prepareGraphContext()
       
       // Build system prompt with MAVExplorer domain knowledge - only when actually sending a message
-      const systemPrompt = `You are an AI assistant specialized in analyzing quadcopter/UAV telemetry data from MAVProxy/MAVLink logs. This is MAVExplorer, a tool for visualizing and analyzing flight data.
+      const systemPrompt = `UAV flight telemetry. Output ONLY this format:\n\n**What the graph shows**\n- [fact 1]\n- [fact 2]\n\n**✅ What this means**\n- [issue 1]\n- [issue 2]\n\n**🔧 Suggestions**\n🔹 [fix 1]\n🔹 [fix 2]\n\nSTOP after 100 words. NO paragraphs.`
 
-**Current Graph Context:**
-- Graph: ${context.graphName || 'Custom'}
-- Data Fields: ${context.dataFields.join(', ')}
-- Available Messages: ${context.messageTypes.slice(0, 10).join(', ')}${context.messageTypes.length > 10 ? '...' : ''}
-- Flight Modes: ${Object.entries(context.modeSummary).map(([m, c]) => `${m}(${c})`).join(', ')}
-
-**Field Statistics:**
-${Object.entries(context.stats).map(([field, stat]) => 
-  `• ${field}: min=${stat.min}, max=${stat.max}, avg=${stat.avg}, points=${stat.count}`
-).join('\n')}
-
-**Key MAVLink/Quadcopter Concepts:**
-- **ATT (Attitude)**: Roll, Pitch, Yaw angles - aircraft orientation
-- **BATT (Battery)**: Volt, Curr, CurrTot - power system monitoring
-- **GPS**: Lat, Lng, Alt, Spd - position and velocity
-- **CTUN**: Navigation/control tuning - altitude hold, throttle
-- **IMU**: Gyroscopes, accelerometers - inertial sensors
-- **RCIN/RCOU**: RC input/servo output - control signals
-- **Flight Modes**: MANUAL, STABILIZE, LOITER, AUTO, RTL, GUIDED, LAND
-
-**Response Format (REQUIRED - STRICT):**
-
-STOP. Read this first. Your response MUST be EXACTLY this structure. Nothing more. Nothing less.
-
-📊 **What the graph shows**
-2 short sentences max. Just the facts you see.
-
-✅ **What this likely means**
-2 short sentences max. Just the diagnosis.
-
-🔧 **Quick fixes**
-🔹 Bullet 1
-🔹 Bullet 2
-(2-3 bullets max, each one line)
-
-CRITICAL RULES:
-- TOTAL: Maximum 80 words
-- Do NOT explain concepts
-- Do NOT give long paragraphs
-- ONLY use the 3 sections above
-- Be brutally short and direct
-- One sentence = one line max
-
-If user question is off-topic, respond: "❌ Not in current graph data"
-
-Answer about the telemetry in the format above.`
+      // Send 100 evenly distributed data points across the dataset
+      const dataPoints = Object.entries(context.stats)
+        .slice(0, 3)
+        .map(([field, stat]) => {
+          const points = seriesData[field] || []
+          console.log(`🔍 Field: ${field}, Total points: ${points.length}`)
+          
+          // Get up to 100 evenly distributed samples across entire dataset
+          const sampleCount = Math.min(100, points.length)
+          const step = Math.max(1, Math.floor(points.length / sampleCount))
+          const samples = []
+          for (let i = 0; i < points.length && samples.length < sampleCount; i += step) {
+            samples.push(points[i].v.toFixed(1))
+          }
+          
+          console.log(`📊 ${field} first 20 samples:`, samples.slice(0, 20))
+          console.log(`📊 ${field} total samples sent: ${samples.length}`)
+          
+          return `${field}: range ${stat.min} to ${stat.max}, avg ${stat.avg}, ${stat.count} total points. Values: ${samples.join(',')}`
+        })
+        .join(' | ')
+      
+      console.log('📤 Data string length:', dataPoints.length, 'characters')
 
       // Prepare conversation history - filter out system messages for Gemini
       const conversationMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-6), // Last 6 messages
-        userMessage
+        ...messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-4),
+        { role: 'user', content: `${input}\nUAV Telemetry Graph: ${context.graphName}\nData: ${dataPoints}` }
       ]
 
       // Call backend endpoint - only when user explicitly sends a message
@@ -345,25 +433,30 @@ Answer about the telemetry in the format above.`
         flexDirection: 'column',
         gap: 12
       }}>
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            style={{
-              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '85%',
-              padding: '8px 12px',
-              borderRadius: 8,
-              background: msg.role === 'user' ? '#0a7ea4' : '#2a2a2a',
-              color: '#fff',
-              fontSize: 13,
-              lineHeight: 1.4,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word'
-            }}
-          >
-            {msg.content}
-          </div>
-        ))}
+        {messages.map((msg, idx) => {
+          const formattedParts = formatMessage(msg.content)
+          return (
+            <div
+              key={idx}
+              style={{
+                alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '85%',
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: msg.role === 'user' ? '#0a7ea4' : '#2a2a2a',
+                color: '#fff',
+                fontSize: 13,
+                lineHeight: 1.4,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}
+            >
+              {formattedParts.map((part, i) => 
+                part.bold ? <strong key={i}>{part.text}</strong> : <span key={i}>{part.text}</span>
+              )}
+            </div>
+          )
+        })}
         {loading && (
           <div style={{
             alignSelf: 'flex-start',
@@ -381,17 +474,45 @@ Answer about the telemetry in the format above.`
 
       {/* Input */}
       <div style={{
-        padding: 10,
+        padding: 12,
         borderTop: '1px solid #333',
         background: '#0a0a0a'
       }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={autoAnalyzeGraph}
+          disabled={loading || rateLimitError}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: loading ? '#444' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            border: 'none',
+            borderRadius: 8,
+            color: '#fff',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: 14,
+            fontWeight: 'bold',
+            transition: 'all 0.2s',
+            boxShadow: loading ? 'none' : '0 4px 12px rgba(102, 126, 234, 0.4)'
+          }}
+        >
+          {loading ? '⏳ Analyzing...' : '🔍 Ask AI to Analyze Graph'}
+        </button>
+        <div style={{
+          fontSize: 10,
+          color: '#666',
+          marginTop: 8,
+          textAlign: 'center'
+        }}>
+          Click to get instant insights about {graphName || 'this graph'}
+        </div>
+        
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask about the graph data..."
+            placeholder="Or ask a specific question..."
             disabled={loading}
             style={{
               flex: 1,
@@ -400,7 +521,7 @@ Answer about the telemetry in the format above.`
               border: '1px solid #444',
               borderRadius: 6,
               color: '#fff',
-              fontSize: 13,
+              fontSize: 12,
               outline: 'none'
             }}
           />
@@ -414,20 +535,12 @@ Answer about the telemetry in the format above.`
               borderRadius: 6,
               color: '#fff',
               cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-              fontSize: 16,
+              fontSize: 14,
               transition: 'background 0.2s'
             }}
           >
             ⬆
           </button>
-        </div>
-        <div style={{
-          fontSize: 10,
-          color: '#666',
-          marginTop: 6,
-          textAlign: 'center'
-        }}>
-          Try: "What's the attitude range?" or "Any battery issues?"
         </div>
       </div>
 

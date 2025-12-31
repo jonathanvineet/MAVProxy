@@ -887,7 +887,7 @@ def get_flight_modes():
 @app.route('/ai/chat', methods=['POST', 'OPTIONS'])
 @app.route('/api/ai/chat', methods=['POST', 'OPTIONS'])
 def ai_chat():
-    """Proxy Google Gemini API requests from frontend - handles CORS properly"""
+    """Proxy Google Gemini API with vision support - follows official API format"""
     try:
         from google import genai
     except ImportError:
@@ -908,36 +908,19 @@ def ai_chat():
         if not messages:
             return jsonify({'error': 'No messages provided'}), 400
         
-        # Create Gemini client with API key
+        # Create Gemini client
         client = genai.Client(api_key=api_key)
         
-        # Convert messages to Gemini format
-        # Extract text content from messages, filter out system messages
-        gemini_contents = []
-        for msg in messages:
-            role = msg.get('role')
-            if role == 'system':
-                # Prepend system context to first user message
-                continue
-            
-            content = msg.get('content', '')
-            if not content:
-                continue
-            
-            # Map user/assistant to user/model for Gemini
-            gemini_role = 'user' if role == 'user' else 'model'
-            gemini_contents.append({
-                'role': gemini_role,
-                'parts': [{'text': content}]
-            })
+        # Messages are in Gemini format from frontend
+        # Format: [{ text: '...' }, { inlineData: { mimeType: '...', data: '...' } }]
         
-        if not gemini_contents:
-            return jsonify({'error': 'No valid messages to process'}), 400
+        # Use gemini-2.5-flash - better free tier limits and supports vision
+        model = 'gemini-2.5-flash'
         
-        # Send request to Gemini API
+        # Send request to Gemini API per official documentation
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=gemini_contents
+            model=model,
+            contents=messages
         )
         
         return jsonify({

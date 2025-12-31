@@ -56,6 +56,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
   const [xInterval, setXInterval] = useState(null)
   const [yInterval, setYInterval] = useState(null)
   const chartRef = useRef(null)
+  const chartContainerRef = useRef(null)
   
   // Save graph state
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -577,6 +578,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
 
   const renderChart = (isFullscreen = false) => (
     <div 
+      ref={chartContainerRef}
       style={{ 
         flex: 1, 
         minHeight: isFullscreen ? '90vh' : 500,
@@ -1113,6 +1115,7 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
         analysis={analysis}
         isVisible={showAIChat}
         onClose={() => setShowAIChat(false)}
+        chartRef={chartContainerRef}
       />
     </>
   )
