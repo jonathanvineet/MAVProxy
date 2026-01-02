@@ -388,7 +388,7 @@ Keep under 100 words. NO extra explanations.`
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 18 }}>🤖</span>
-          <strong style={{ fontSize: 14, color: '#fff' }}>Graph AI Assistant</strong>
+          <strong style={{ fontSize: 14, color: '#fff' }}>Mavvy</strong>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -495,7 +495,7 @@ Keep under 100 words. NO extra explanations.`
             boxShadow: loading ? 'none' : '0 4px 12px rgba(102, 126, 234, 0.4)'
           }}
         >
-          {loading ? '⏳ Analyzing...' : '🔍 Ask AI to Analyze Graph'}
+          {loading ? '⏳ Analyzing...' : '🔍 Ask Mavvy to Analyze Graph'}
         </button>
         <div style={{
           fontSize: 10,

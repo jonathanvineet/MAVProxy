@@ -911,8 +911,46 @@ def ai_chat():
         # Create Gemini client
         client = genai.Client(api_key=api_key)
         
-        # Messages are in Gemini format from frontend
-        # Format: [{ text: '...' }, { inlineData: { mimeType: '...', data: '...' } }]
+        # Check if messages are already in Gemini format (has 'text' or 'inlineData' keys)
+        # or in OpenAI format (has 'role' and 'content' keys)
+        is_gemini_format = isinstance(messages, list) and len(messages) > 0 and \
+                          any(isinstance(m, dict) and ('text' in m or 'inlineData' in m) for m in messages)
+        
+        if is_gemini_format:
+            # Already in correct Gemini format (from auto-analyze with image)
+            gemini_contents = messages
+        else:
+            # Convert from OpenAI format to Gemini format (from text chat)
+            gemini_contents = []
+            system_prompt = None
+            
+            for msg in messages:
+                role = msg.get('role')
+                content = msg.get('content', '')
+                
+                if role == 'system':
+                    # Save system prompt to prepend to first user message
+                    system_prompt = content
+                    continue
+                
+                if not content:
+                    continue
+                
+                # Map user/assistant to user/model for Gemini
+                gemini_role = 'user' if role == 'user' else 'model'
+                
+                # Add system prompt to first user message
+                if system_prompt and gemini_role == 'user' and not gemini_contents:
+                    content = system_prompt + '\n\n' + content
+                    system_prompt = None
+                
+                gemini_contents.append({
+                    'role': gemini_role,
+                    'parts': [{'text': content}]
+                })
+        
+        if not gemini_contents:
+            return jsonify({'error': 'No valid messages to process'}), 400
         
         # Use gemini-2.5-flash - better free tier limits and supports vision
         model = 'gemini-2.5-flash'
@@ -920,7 +958,7 @@ def ai_chat():
         # Send request to Gemini API per official documentation
         response = client.models.generate_content(
             model=model,
-            contents=messages
+            contents=gemini_contents
         )
         
         return jsonify({

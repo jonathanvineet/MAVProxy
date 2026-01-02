@@ -699,9 +699,9 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
                 borderRadius: 3,
                 fontWeight: 'bold'
               }}
-              title="Ask AI about this graph"
+              title="Ask Mavvy about this graph"
             >
-              🤖 {showAIChat ? 'Close AI' : 'Ask AI'}
+              🤖 {showAIChat ? 'Close Mavvy' : 'Ask Mavvy'}
             </button>
             
             {/* Save Graph Button */}
