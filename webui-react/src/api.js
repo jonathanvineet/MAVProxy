@@ -187,6 +187,7 @@ export default {
     return client.get(`/profiles/${profileId}`)
   },
   createProfile: (profileData) => {
+    // Axios automatically handles FormData and sets proper Content-Type with boundary
     return client.post('/profiles', profileData)
   },
   updateProfile: (profileId, profileData) => {

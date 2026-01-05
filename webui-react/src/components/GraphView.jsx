@@ -697,11 +697,15 @@ export default function GraphView({analysis, token, selected, predefinedGraph, s
                 color: '#fff',
                 border: showAIChat ? '1px solid #66BB6A' : '1px solid #0d99c6',
                 borderRadius: 3,
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
               }}
               title="Ask Mavvy about this graph"
             >
-              🤖 {showAIChat ? 'Close Mavvy' : 'Ask Mavvy'}
+              <img src="/bgdrorne.png" alt="Mavvy" style={{ width: 20, height: 20, objectFit: 'contain' }} />
+              {showAIChat ? 'Close Mavvy' : 'Ask Mavvy'}
             </button>
             
             {/* Save Graph Button */}

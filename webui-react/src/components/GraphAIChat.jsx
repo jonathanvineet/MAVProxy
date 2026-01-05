@@ -321,7 +321,10 @@ Keep under 100 words. NO extra explanations.`
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <h5 style={{ margin: 0, color: '#fff', fontSize: 14 }}>🤖 AI Chat</h5>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src="/bgdrorne.png" alt="Mavvy" style={{ width: 20, height: 20, objectFit: 'contain' }} />
+            <h5 style={{ margin: 0, color: '#fff', fontSize: 14 }}>AI Chat</h5>
+          </div>
           <button
             onClick={onClose}
             style={{
@@ -387,7 +390,7 @@ Keep under 100 words. NO extra explanations.`
         borderBottom: '2px solid #4CAF50'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 18 }}>🤖</span>
+          <img src="/bgdrorne.png" alt="Mavvy" style={{ width: 22, height: 22, objectFit: 'contain' }} />
           <strong style={{ fontSize: 14, color: '#fff' }}>Mavvy</strong>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -501,9 +504,13 @@ Keep under 100 words. NO extra explanations.`
           fontSize: 10,
           color: '#666',
           marginTop: 8,
-          textAlign: 'center'
+          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4
         }}>
-          Click to get instant insights about {graphName || 'this graph'}
+          <span>Click to get instant insights about {graphName || 'this graph'}</span>
         </div>
         
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>

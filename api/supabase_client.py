@@ -38,7 +38,7 @@ class SupabaseManager:
             except Exception as e:
                 print(f"⚠️ Supabase initialization failed: {e}")
     
-    def create_profile(self, user_id: Optional[str], profile_name: str, description: str = "", drone_type: Optional[str] = None) -> Optional[Dict]:
+    def create_profile(self, user_id: Optional[str], profile_name: str, description: str = "", drone_type: Optional[str] = None, photo_url: Optional[str] = None) -> Optional[Dict]:
         """Create a new profile. Works with or without Supabase.
         If Supabase is disabled, stores in memory.
         """
@@ -54,6 +54,7 @@ class SupabaseManager:
                 'name': profile_name,
                 'description': description or "",
                 'drone_type': drone_type,
+                'photo_url': photo_url,
                 'created_at': now,
                 'updated_at': now
             }
@@ -68,6 +69,8 @@ class SupabaseManager:
             # Include optional fields only if provided
             if drone_type is not None:
                 payload['drone_type'] = drone_type
+            if photo_url is not None:
+                payload['photo_url'] = photo_url
             # Some schemas include user_id; avoid sending if not needed
             if user_id:
                 payload['user_id'] = user_id

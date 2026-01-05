@@ -8,7 +8,9 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
   const [newProfileData, setNewProfileData] = useState({
     name: '',
     description: '',
-    drone_type: ''
+    drone_type: '',
+    photo: null,
+    photoPreview: null
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -32,6 +34,35 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
     }
   }
 
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file')
+        return
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image must be smaller than 5MB')
+        return
+      }
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setNewProfileData({
+          ...newProfileData,
+          photo: file,
+          photoPreview: event.target?.result
+        })
+      }
+      reader.readAsDataURL(file)
+      setError(null)
+    }
+  }
+
   const handleCreateProfile = async (e) => {
     e.preventDefault()
     if (!newProfileData.name.trim()) {
@@ -42,17 +73,22 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
     setLoading(true)
     setError(null)
     try {
-      const response = await api.createProfile({
-        name: newProfileData.name,
-        description: newProfileData.description,
-        drone_type: newProfileData.drone_type
-      })
+      const formData = new FormData()
+      formData.append('name', newProfileData.name)
+      formData.append('description', newProfileData.description)
+      formData.append('drone_type', newProfileData.drone_type)
+      
+      if (newProfileData.photo) {
+        formData.append('photo', newProfileData.photo)
+      }
+      
+      const response = await api.createProfile(formData)
       
       const newProfile = response.data
       setProfiles([newProfile, ...profiles])
       onProfileSelect(newProfile)
       
-      setNewProfileData({ name: '', description: '', drone_type: '' })
+      setNewProfileData({ name: '', description: '', drone_type: '', photo: null, photoPreview: null })
       setShowNewProfile(false)
     } catch (err) {
       setError('Failed to create profile: ' + err.message)
@@ -129,6 +165,31 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
             disabled={loading}
             rows="2"
           />
+          <div className="photo-upload-section">
+            <label className="photo-upload-label">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                disabled={loading}
+                className="photo-input"
+              />
+              <span className="photo-upload-btn">📷 Upload Drone Photo (Optional)</span>
+            </label>
+            {newProfileData.photoPreview && (
+              <div className="photo-preview-container">
+                <img src={newProfileData.photoPreview} alt="Preview" className="photo-preview" />
+                <button
+                  type="button"
+                  className="btn-remove-photo"
+                  onClick={() => setNewProfileData({...newProfileData, photo: null, photoPreview: null})}
+                  disabled={loading}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
           <button type="submit" className="btn-create" disabled={loading}>
             {loading ? 'Creating...' : 'Create Drone Profile'}
           </button>
@@ -153,14 +214,25 @@ export default function ProfileManager({ selectedProfile, onProfileSelect }) {
               {profile.drone_type && <div className="profile-type">{profile.drone_type}</div>}
               {profile.description && <div className="profile-desc">{profile.description}</div>}
             </div>
-            <button
-              className="btn-delete"
-              onClick={(e) => handleDeleteProfile(profile.id, e)}
-              disabled={loading}
-              title="Delete this drone profile"
-            >
-              ✕
-            </button>
+            <div className="profile-actions">
+              {profile.photo_url && (
+                <div className="profile-photo-container">
+                  <img
+                    src={profile.photo_url}
+                    alt={profile.name}
+                    className="profile-photo"
+                  />
+                </div>
+              )}
+              <button
+                className="btn-delete"
+                onClick={(e) => handleDeleteProfile(profile.id, e)}
+                disabled={loading}
+                title="Delete this drone profile"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ))}
       </div>

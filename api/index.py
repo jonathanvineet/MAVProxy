@@ -136,16 +136,38 @@ def get_profiles():
 @app.route('/api/profiles', methods=['POST', 'OPTIONS'])
 def create_profile():
     """Create a new profile (user_id is optional)"""
-    data = request.get_json()
-    user_id = data.get('user_id', 'anonymous')  # Default to 'anonymous' if not provided
-    name = data.get('name')
-    description = data.get('description', '')
-    drone_type = data.get('drone_type')
+    # Handle both JSON and multipart/form-data
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        # Form data with possible file upload
+        user_id = request.form.get('user_id', 'anonymous')
+        name = request.form.get('name')
+        description = request.form.get('description', '')
+        drone_type = request.form.get('drone_type', '')
+        
+        # Handle photo upload
+        photo_url = None
+        if 'photo' in request.files:
+            photo = request.files['photo']
+            if photo and photo.filename:
+                # For now, we'll store the photo as base64 in the database
+                # In production, you'd want to upload to cloud storage (S3, etc.)
+                import base64
+                photo_data = photo.read()
+                photo_base64 = base64.b64encode(photo_data).decode('utf-8')
+                photo_url = f"data:{photo.content_type};base64,{photo_base64}"
+    else:
+        # JSON data
+        data = request.get_json()
+        user_id = data.get('user_id', 'anonymous')
+        name = data.get('name')
+        description = data.get('description', '')
+        drone_type = data.get('drone_type')
+        photo_url = data.get('photo_url')
     
     if not name:
         return jsonify({'error': 'name required'}), 400
     
-    profile = mongo_manager.create_profile(user_id, name, description, drone_type)
+    profile = mongo_manager.create_profile(user_id, name, description, drone_type, photo_url)
     if profile:
         return jsonify(profile)
     else:

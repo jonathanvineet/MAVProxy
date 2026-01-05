@@ -162,7 +162,7 @@ class MongoManager:
             print(f"⚠️ Error saving analysis results: {e}")
 
     # -------- profiles --------
-    def create_profile(self, user_id: Optional[str], name: str, description: str = "", drone_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def create_profile(self, user_id: Optional[str], name: str, description: str = "", drone_type: Optional[str] = None, photo_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not name:
             return None
 
@@ -173,6 +173,7 @@ class MongoManager:
                 'name': name,
                 'description': description or "",
                 'drone_type': drone_type,
+                'photo_url': photo_url,
                 'created_at': _now_iso(),
                 'updated_at': _now_iso(),
             }
@@ -184,6 +185,7 @@ class MongoManager:
             'name': name,
             'description': description or "",
             'drone_type': drone_type,
+            'photo_url': photo_url,
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
         }
