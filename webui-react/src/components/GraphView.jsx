@@ -283,18 +283,18 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
   Object.values(seriesData).forEach(series => {
     series.forEach(p => allTimestamps.add(p.t))
   })
-  const labels = Array.from(allTimestamps).sort((a, b) => a - b)
-
-  // Calculate data range
-  const minTime = labels[0]
-  const maxTime = labels[labels.length - 1]
+  const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+  
+  // Convert to relative time starting from 0, in seconds (divide by 100 for deciseconds)
+  const minTime = absoluteTimestamps[0]
+  const labels = absoluteTimestamps.map(t => (t - minTime) / 100)
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData).map((field, idx) => {
     const series = seriesData[field]
     const color = SERIES_COLORS[idx % SERIES_COLORS.length]
 
-    // Create a map of timestamp to value
+    // Create a map of absolute timestamp to value
     const dataMap = {}
     series.forEach(p => {
       const t = p.t ?? p.x
@@ -304,8 +304,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
       }
     })
 
-    // Map labels to values (null if not present)
-    const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+    // Map labels to values (null if not present) - use absolute timestamps for lookup
+    const values = absoluteTimestamps.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
 
     // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
     // For custom graphs, use message.field format
@@ -334,8 +334,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
 
       annotations[`mode-${idx}`] = {
         type: 'box',
-        xMin: fm.start,
-        xMax: fm.end,
+        xMin: (fm.start - minTime) / 100,  // Convert to relative seconds
+        xMax: (fm.end - minTime) / 100,    // Convert to relative seconds
         yMin: 'min',
         yMax: 'max',
         backgroundColor: color,
@@ -353,10 +353,12 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
   // Calculate zoom limits based on intervals
   let xMin = undefined
   let xMax = undefined
-  if (xInterval && minTime && maxTime) {
-    const center = (minTime + maxTime) / 2
-    xMin = Math.max(minTime, center - xInterval / 2)
-    xMax = Math.min(maxTime, center + xInterval / 2)
+  if (xInterval && labels.length > 0) {
+    const minLabel = labels[0]  // Already in seconds, starts at 0
+    const maxLabel = labels[labels.length - 1]
+    const center = (minLabel + maxLabel) / 2
+    xMin = Math.max(minLabel, center - xInterval / 2)
+    xMax = Math.min(maxLabel, center + xInterval / 2)
   }
 
   let yMin = undefined
@@ -398,9 +400,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
           ticks: {
             font: { size: 11 },
             color: textColor,
-            maxTicksLimit: 12,
+            maxTicksLimit: 10,
             callback: function (value) {
-              // Display time in seconds with 2 decimal places
               return Number(value).toFixed(2) + 's'
             }
           }
@@ -408,7 +409,9 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
         y: {
           title: {
             display: true,
-            text: 'Value',
+            text: Object.keys(seriesData).length === 1
+              ? (predefinedGraph ? Object.keys(seriesData)[0] : `${selected.msg}.${Object.keys(seriesData)[0]}`)
+              : 'Value',
             font: { size: 12 },
             color: textColor
           },
@@ -587,7 +590,9 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
         position: 'relative',
         background: isFullscreen ? 'rgba(255,255,255,0.98)' : '#ffffff',
         borderRadius: '4px',
-        border: '1px solid #e0e0e0'
+        border: '1px solid #e0e0e0',
+        padding: isFullscreen ? '20px' : '0',
+        boxSizing: 'border-box'
       }}
       onClick={() => !isFullscreen && setFullscreen(true)}
     >

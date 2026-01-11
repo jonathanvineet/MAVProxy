@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Line } from 'react-chartjs-2'
 import api from '../api'
+import GraphAIChat from './GraphAIChat'
+import html2canvas from 'html2canvas'
 
 export default function ComparisonView({ allProfiles }) {
   const [comparisonPanels, setComparisonPanels] = useState([
-    { id: 1, profile: null, savedGraphs: [], selectedGraph: null, graphData: null, loading: false }
+    { id: 1, profile: null, savedGraphs: [], selectedGraph: null, graphData: null, loading: false, showAIChat: false }
   ])
+  const chartRefs = useRef({}) // Stores { [panelId]: Chart.js instance }
+  const containerRefs = useRef({}) // Stores { [panelId]: DOM element for graph container }
 
   const FLIGHT_MODE_COLORS = {
     'UNKNOWN': 'rgba(255, 192, 203, 0.5)',
@@ -31,7 +35,8 @@ export default function ComparisonView({ allProfiles }) {
       savedGraphs: [],
       selectedGraph: null,
       graphData: null,
-      loading: false
+      loading: false,
+      showAIChat: false
     }])
   }
 
@@ -94,6 +99,55 @@ export default function ComparisonView({ allProfiles }) {
           selectedGraph: graph,
           graphData: graph.series_data || {}
         }
+      }
+      return p
+    }))
+  }
+
+  // Export graph as PNG
+  const handleExportGraphAsPNG = (panelId) => {
+    try {
+      const chartRef = chartRefs.current[panelId]
+      if (!chartRef) {
+        alert('Chart is not ready. Please wait for the graph to load.')
+        return
+      }
+
+      let canvas = null
+      if (chartRef.canvas) {
+        canvas = chartRef.canvas
+      } else if (chartRef.ctx && chartRef.ctx.canvas) {
+        canvas = chartRef.ctx.canvas
+      } else {
+        alert('Unable to access chart canvas. Please try again.')
+        return
+      }
+
+      const image = canvas.toDataURL('image/png')
+      const link = document.createElement('a')
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+      const panel = comparisonPanels.find(p => p.id === panelId)
+      const filename = panel?.selectedGraph?.name
+        ? `${panel.selectedGraph.name}_${timestamp}.png`
+        : `graph_${timestamp}.png`
+
+      link.href = image
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      console.log('Graph exported as PNG:', filename)
+    } catch (error) {
+      console.error('Error exporting PNG:', error)
+      alert('Failed to export graph: ' + error.message)
+    }
+  }
+
+  // Toggle AI chat for a panel
+  const toggleAIChat = (panelId) => {
+    setComparisonPanels(prev => prev.map(p => {
+      if (p.id === panelId) {
+        return { ...p, showAIChat: !p.showAIChat }
       }
       return p
     }))
@@ -269,7 +323,11 @@ export default function ComparisonView({ allProfiles }) {
       interaction: { mode: 'index', intersect: false }
     }
 
-    return <Line data={chartData} options={chartOptions} />
+    return <Line 
+      ref={(ref) => { chartRefs.current[panel.id] = ref }} 
+      data={chartData} 
+      options={chartOptions} 
+    />
   }
 
   return (
@@ -315,7 +373,7 @@ export default function ComparisonView({ allProfiles }) {
               border: '1px solid #ddd',
               borderRadius: 6,
               padding: 12,
-              height: 550,
+              height: 750,
               display: 'flex',
               flexDirection: 'column',
               width: '100%',
@@ -420,10 +478,64 @@ export default function ComparisonView({ allProfiles }) {
               )}
             </div>
 
+            {/* Action buttons */}
+            {panel.selectedGraph && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <button
+                  onClick={() => handleExportGraphAsPNG(panel.id)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: '#4CAF50',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: '#fff',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  💾 Save PNG
+                </button>
+                <button
+                  onClick={() => toggleAIChat(panel.id)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: panel.showAIChat ? '#ff6b6b' : '#0a7ea4',
+                    border: 'none',
+                    borderRadius: 4,
+                    color: '#fff',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {panel.showAIChat ? '✕ Close Mavvy' : '🤖 Ask Mavvy'}
+                </button>
+              </div>
+            )}
+
             {/* Graph display area */}
-            <div style={{ flex: 1, background: '#ffffff', borderRadius: 4, padding: 8, minHeight: 0, border: '1px solid #e0e0e0' }}>
+            <div 
+              ref={(ref) => { containerRefs.current[panel.id] = ref }}
+              style={{ flex: 1, background: '#ffffff', borderRadius: 4, padding: 8, minHeight: 0, border: '1px solid #e0e0e0' }}
+            >
               {renderGraph(panel)}
             </div>
+
+            {/* AI Chat */}
+            {panel.showAIChat && panel.selectedGraph && (
+              <GraphAIChat
+                seriesData={panel.graphData || {}}
+                flightModes={panel.selectedGraph.flight_modes || []}
+                graphName={panel.selectedGraph.name}
+                analysis={null}
+                isVisible={panel.showAIChat}
+                onClose={() => toggleAIChat(panel.id)}
+                chartRef={{ current: containerRefs.current[panel.id] }}
+              />
+            )}
           </div>
         ))}
       </div>

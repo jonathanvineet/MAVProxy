@@ -370,12 +370,12 @@ Keep under 100 words. NO extra explanations.`
       bottom: 16,
       width: 360,
       height: 500,
-      background: '#1a1a1a',
+      background: '#ffffff',
       border: '2px solid #4CAF50',
       borderRadius: 8,
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
       zIndex: 1000
     }}>
       {/* Header */}
@@ -434,7 +434,8 @@ Keep under 100 words. NO extra explanations.`
         padding: 12,
         display: 'flex',
         flexDirection: 'column',
-        gap: 12
+        gap: 12,
+        background: '#f5f5f5'
       }}>
         {messages.map((msg, idx) => {
           const formattedParts = formatMessage(msg.content)
@@ -446,8 +447,8 @@ Keep under 100 words. NO extra explanations.`
                 maxWidth: '85%',
                 padding: '8px 12px',
                 borderRadius: 8,
-                background: msg.role === 'user' ? '#0a7ea4' : '#2a2a2a',
-                color: '#fff',
+                background: msg.role === 'user' ? '#e3f2fd' : '#eeeeee',
+                color: '#1a1a1a',
                 fontSize: 13,
                 lineHeight: 1.4,
                 whiteSpace: 'pre-wrap',
@@ -465,8 +466,8 @@ Keep under 100 words. NO extra explanations.`
             alignSelf: 'flex-start',
             padding: '8px 12px',
             borderRadius: 8,
-            background: '#2a2a2a',
-            color: '#999',
+            background: '#eeeeee',
+            color: '#666',
             fontSize: 13
           }}>
             <span className="typing-indicator">●●●</span>
@@ -478,8 +479,8 @@ Keep under 100 words. NO extra explanations.`
       {/* Input */}
       <div style={{
         padding: 12,
-        borderTop: '1px solid #333',
-        background: '#0a0a0a'
+        borderTop: '1px solid #e0e0e0',
+        background: '#ffffff'
       }}>
         <button
           onClick={autoAnalyzeGraph}
@@ -502,7 +503,7 @@ Keep under 100 words. NO extra explanations.`
         </button>
         <div style={{
           fontSize: 10,
-          color: '#666',
+          color: '#555',
           marginTop: 8,
           textAlign: 'center',
           display: 'flex',
@@ -524,10 +525,10 @@ Keep under 100 words. NO extra explanations.`
             style={{
               flex: 1,
               padding: '8px 12px',
-              background: '#2a2a2a',
-              border: '1px solid #444',
+              background: '#f5f5f5',
+              border: '1px solid #ddd',
               borderRadius: 6,
-              color: '#fff',
+              color: '#1a1a1a',
               fontSize: 12,
               outline: 'none'
             }}
