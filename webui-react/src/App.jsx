@@ -70,13 +70,13 @@ export default function App(){
   }
 
   return (
-    <div className="app" style={{ background: '#000', minHeight: '100vh', color: '#fff' }}>
-      <div className="header" style={{ color: '#fff' }}>
-        <h2 style={{ color: '#fff' }}>MAVExplorer WebUI</h2>
-        <div style={{ color: '#999' }}>Complete MAVLink log analysis and visualization tool</div>
+    <div className="app" style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
+      <div className="header" style={{ color: '#1a1a1a' }}>
+        <h2 style={{ color: '#1a1a1a' }}>MAVExplorer WebUI</h2>
+        <div style={{ color: '#666' }}>Complete MAVLink log analysis and visualization tool</div>
       </div>
 
-      <div className="upload-section" style={{marginBottom: 16, background: '#1a1a1a', border: '1px solid #333', color: '#fff'}}>
+      <div className="upload-section" style={{marginBottom: 16, background: '#f8f9fa', border: '1px solid #ddd', color: '#1a1a1a'}}>
         <ProfileManager onProfileSelect={setSelectedProfile} selectedProfile={selectedProfile} />
         {error && <div style={{color:'#ff6b6b', marginBottom:8}}>{error}</div>}
         <FileUploader onUpload={handleUpload} loading={loading} disabled={false} />
@@ -84,15 +84,16 @@ export default function App(){
         {/* Important notice for Vercel deployment */}
         {import.meta.env.PROD && (
           <div style={{
-            background: '#1a3a4a',
-            border: '1px solid #2a5a6a',
+            background: '#e3f2fd',
+            border: '1px solid #90caf9',
             borderRadius: 4,
             padding: 12,
             margin: '12px 0',
             fontSize: 13,
-            lineHeight: 1.5
+            lineHeight: 1.5,
+            color: '#1a1a1a'
           }}>
-            <strong style={{color: '#4fc3f7'}}>ℹ️ Cloud Deployment Note:</strong> After uploading and analyzing a file, 
+            <strong style={{color: '#1976d2'}}>ℹ️ Cloud Deployment Note:</strong> After uploading and analyzing a file, 
             <strong> use the "Save Graph" button</strong> to persist your graphs to the database. 
             Due to serverless limitations, the raw file data is only available during your upload session. 
             Saved graphs can be viewed anytime from the "Saved Graphs" section below.
@@ -103,7 +104,7 @@ export default function App(){
       <TabPanel tabs={['Graphs', 'Parameters', 'Statistics', 'Message Dump']}>
         <div className="graphs-tab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Options on top */}
-          <div style={{ padding: '12px', background: '#1a1a1a', borderBottom: '1px solid #333' }}>
+          <div style={{ padding: '12px', background: '#f8f9fa', borderBottom: '1px solid #ddd' }}>
             <OptionsPanel 
               analysis={analysis} 
               token={token} 
@@ -120,7 +121,7 @@ export default function App(){
           </div>
           
           {/* Graph takes remaining space */}
-          <div style={{ flex: 1, padding: '16px', overflow: 'auto', background: '#000' }}>
+          <div style={{ flex: 1, padding: '16px', overflow: 'auto', background: '#ffffff' }}>
             <GraphView 
               analysis={analysis} 
               token={token} 
@@ -145,12 +146,12 @@ export default function App(){
       </TabPanel>
 
       {/* Saved Graphs Panel - Always visible and separate from GraphView */}
-      <div style={{ padding: '16px', background: '#000' }}>
+      <div style={{ padding: '16px', background: '#ffffff' }}>
         <SavedGraphsPanel selectedProfile={selectedProfile} />
       </div>
 
       {/* Comparison View - Side-by-side graph comparison */}
-      <div style={{ padding: '16px', background: '#000' }}>
+      <div style={{ padding: '16px', background: '#ffffff' }}>
         <ComparisonView allProfiles={allProfiles} />
       </div>
     </div>

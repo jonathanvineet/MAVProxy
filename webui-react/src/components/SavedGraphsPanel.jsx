@@ -28,7 +28,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
   // Reload saved graphs function
   const reloadSavedGraphs = () => {
     if (!selectedProfile) return
-    
+
     console.group('[SavedGraphs] Reload')
     console.log('Profile ID:', selectedProfile.id)
     setLoadingSavedGraphs(true)
@@ -61,7 +61,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       setSavedGraphs([])
       return
     }
-    
+
     console.log('[Profile] Selected profile changed:', selectedProfile.id)
     reloadSavedGraphs()
   }, [selectedProfile])
@@ -69,7 +69,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
   // Handle delete saved graph
   const handleDeleteSavedGraph = async (graphId) => {
     if (!window.confirm('Delete this saved graph?')) return
-    
+
     try {
       await api.deleteSavedGraph(graphId)
       setSavedGraphs(savedGraphs.filter(g => g.id !== graphId))
@@ -82,7 +82,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
   // Handle expand saved graph - support multiple
   const handleExpandSavedGraph = async (graph) => {
     const isExpanded = expandedGraphIds.has(graph.id)
-    
+
     if (isExpanded) {
       // Close it
       const newSet = new Set(expandedGraphIds)
@@ -100,12 +100,12 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     const newSet = new Set(expandedGraphIds)
     newSet.add(graph.id)
     setExpandedGraphIds(newSet)
-    
+
     // Initialize ref for this graph
     if (!chartRefs.current[graph.id]) {
       chartRefs.current[graph.id] = React.createRef()
     }
-    
+
     // Mark as loading
     const newData = { ...expandedGraphsData }
     newData[graph.id] = {
@@ -271,36 +271,45 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { labels: { color: '#fff' }, position: 'top' },
+        legend: { labels: { color: '#1a1a1a' }, position: 'top' },
         annotation: { annotations },
         tooltip: {
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          titleColor: '#1a1a1a',
+          bodyColor: '#1a1a1a',
+          borderColor: '#ddd',
+          borderWidth: 1,
           callbacks: {
-            filter: function(tooltipItem) {
+            filter: function (tooltipItem) {
               return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
+            },
+            title: function (context) {
+              const index = context[0].dataIndex
+              const time = labels[index]
+              return `Time: ${Number(time).toFixed(2)}s`
             }
           }
         }
       },
       scales: {
-        x: { 
+        x: {
           type: 'linear',
-          ticks: { 
-            color: '#888',
+          ticks: {
+            color: '#1a1a1a',
             maxTicksLimit: 12,
-            callback: function(value) {
-              const date = new Date(value * 1000)
-              return date.toTimeString().split(' ')[0]
+            callback: function (value) {
+              return Number(value).toFixed(2) + 's'
             }
-          }, 
-          grid: { color: 'rgba(255,255,255,0.1)' }, 
-          min: xMin, 
-          max: xMax 
+          },
+          grid: { color: 'rgba(0,0,0,0.1)' },
+          min: xMin,
+          max: xMax
         },
-        y: { 
-          ticks: { color: '#888' }, 
-          grid: { color: 'rgba(255,255,255,0.1)' }, 
-          min: yMin, 
-          max: yMax 
+        y: {
+          ticks: { color: '#1a1a1a' },
+          grid: { color: 'rgba(0,0,0,0.1)' },
+          min: yMin,
+          max: yMax
         }
       },
       interaction: { mode: 'index', intersect: false }
@@ -315,7 +324,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       alert('Chart reference not found. Please wait a moment and try again.')
       return
     }
-    
+
     // Try different paths to access the canvas
     let canvas = null
     if (chartRef.canvas) {
@@ -327,13 +336,13 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     } else if (chartRef._canvas) {
       canvas = chartRef._canvas
     }
-    
+
     if (!canvas) {
       console.error('Could not find canvas. Available properties:', Object.keys(chartRef))
       alert('Chart is not ready. Please wait a moment and try again.')
       return
     }
-    
+
     const link = document.createElement('a')
     link.href = canvas.toDataURL('image/png')
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
@@ -349,15 +358,15 @@ export default function SavedGraphsPanel({ selectedProfile }) {
 
   return (
     <div ref={savedPanelRef} style={{
-      background: '#1a1a1a',
-      border: '1px solid #333',
+      background: '#f8f9fa',
+      border: '1px solid #ddd',
       borderRadius: 6,
       padding: 16,
-      color: '#fff',
+      color: '#1a1a1a',
       marginTop: 20
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h4 style={{ margin: 0, color: '#fff' }}>📊 Saved Graphs for "{selectedProfile.name}"</h4>
+        <h4 style={{ margin: 0, color: '#1a1a1a' }}>📊 Saved Graphs for "{selectedProfile.name}"</h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {loadingSavedGraphs && <span style={{ fontSize: 11, color: '#888' }}>Loading…</span>}
           <button
@@ -366,9 +375,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
               fontSize: 11,
               padding: '4px 8px',
               cursor: 'pointer',
-              background: '#444',
-              color: '#fff',
-              border: '1px solid #666',
+              background: '#f0f0f0',
+              color: '#1a1a1a',
+              border: '1px solid #ccc',
               borderRadius: 3
             }}
             title="Reload saved graphs"
@@ -377,7 +386,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
           </button>
         </div>
       </div>
-      
+
       {savedGraphs.length === 0 ? (
         <div style={{ fontSize: 12, color: '#666', fontStyle: 'italic' }}>
           {loadingSavedGraphs ? 'Loading saved graphs...' : 'No saved graphs yet. Upload a file and save graphs to see them here.'}
@@ -386,11 +395,11 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         <div style={{ display: 'grid', gap: 10 }}>
           {savedGraphs.map(graph => (
             <div key={graph.id}>
-              <div 
+              <div
                 onClick={() => handleExpandSavedGraph(graph)}
                 style={{
-                  background: expandedGraphIds.has(graph.id) ? '#1a3a3a' : '#2a2a2a',
-                  border: expandedGraphIds.has(graph.id) ? '1px solid #0a7ea4' : '1px solid #444',
+                  background: expandedGraphIds.has(graph.id) ? '#e3f2fd' : '#ffffff',
+                  border: expandedGraphIds.has(graph.id) ? '1px solid #0a7ea4' : '1px solid #ddd',
                   borderRadius: 4,
                   padding: 10,
                   display: 'flex',
@@ -405,10 +414,10 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                   <div style={{ fontWeight: 'bold', fontSize: 12, color: '#0a7ea4' }}>
                     {expandedGraphIds.has(graph.id) ? '▼' : '▶'} {graph.name}
                   </div>
-                  <div style={{ fontSize: 11, color: '#ccc', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
                     {graph.description}
                   </div>
-                  <div style={{ fontSize: 10, color: '#666', marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 10, color: '#999', marginTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     {graph.graph_type && <span>Type: {graph.graph_type}</span>}
                     {graph.message_type && <span>Message: {graph.message_type}</span>}
                     {graph.field_name && <span>Field: {graph.field_name}</span>}
@@ -441,7 +450,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
 
               {expandedGraphIds.has(graph.id) && expandedGraphsData[graph.id] && (
                 <div style={{
-                  background: '#1a1a1a',
+                  background: '#ffffff',
                   border: '1px solid #0a7ea4',
                   borderTop: 'none',
                   borderRadius: '0 0 4px 4px',
@@ -449,14 +458,14 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                   marginTop: -1
                 }}>
                   {expandedGraphsData[graph.id].loading ? (
-                    <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
+                    <div style={{ padding: 20, textAlign: 'center', color: '#666' }}>
                       Loading graph data…
                     </div>
                   ) : expandedGraphsData[graph.id].data ? (
                     <div>
                       <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <label style={{ fontSize: 12, color: '#fff' }}>X-Axis:</label>
+                          <label style={{ fontSize: 12, color: '#1a1a1a' }}>X-Axis:</label>
                           <select
                             value={expandedGraphsData[graph.id].xInterval || ''}
                             onChange={(e) => {
@@ -467,9 +476,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                             style={{
                               fontSize: 11,
                               padding: '4px 8px',
-                              background: '#2a2a2a',
-                              color: '#fff',
-                              border: '1px solid #555',
+                              background: '#ffffff',
+                              color: '#1a1a1a',
+                              border: '1px solid #ccc',
                               borderRadius: 3,
                               cursor: 'pointer'
                             }}
@@ -483,7 +492,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                           </select>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <label style={{ fontSize: 12, color: '#fff' }}>Y-Axis:</label>
+                          <label style={{ fontSize: 12, color: '#1a1a1a' }}>Y-Axis:</label>
                           <select
                             value={expandedGraphsData[graph.id].yInterval || ''}
                             onChange={(e) => {
@@ -494,9 +503,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                             style={{
                               fontSize: 11,
                               padding: '4px 8px',
-                              background: '#2a2a2a',
-                              color: '#fff',
-                              border: '1px solid #555',
+                              background: '#ffffff',
+                              color: '#1a1a1a',
+                              border: '1px solid #ccc',
                               borderRadius: 3,
                               cursor: 'pointer'
                             }}
@@ -508,9 +517,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                             <option value="500">±500</option>
                           </select>
                         </div>
-                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#fff' }}>
-                          <input 
-                            type="checkbox" 
+                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, color: '#1a1a1a' }}>
+                          <input
+                            type="checkbox"
                             checked={expandedGraphsData[graph.id].showFlightModes}
                             onChange={e => {
                               const newData = { ...expandedGraphsData }
@@ -541,7 +550,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
                       </button>
                     </div>
                   ) : (
-                    <div style={{ padding: 20, textAlign: 'center', color: '#888' }}>
+                    <div style={{ padding: 20, textAlign: 'center', color: '#666' }}>
                       No data available
                     </div>
                   )}

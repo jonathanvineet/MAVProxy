@@ -60,7 +60,7 @@ export default function ComparisonView({ allProfiles }) {
     try {
       const res = await api.getSavedGraphs(profileId)
       const graphs = res.data.graphs || []
-      
+
       setComparisonPanels(prev => prev.map(panel => {
         if (panel.id === panelId) {
           return { ...panel, savedGraphs: graphs, loading: false }
@@ -103,7 +103,7 @@ export default function ComparisonView({ allProfiles }) {
   const renderGraph = (panel) => {
     if (!panel.graphData || Object.keys(panel.graphData).length === 0) {
       return (
-        <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>
+        <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
           Select a profile and graph to display
         </div>
       )
@@ -228,12 +228,22 @@ export default function ComparisonView({ allProfiles }) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { labels: { color: '#fff', font: { size: 10 } }, position: 'top' },
+        legend: { labels: { color: '#1a1a1a', font: { size: 10 } }, position: 'top' },
         annotation: { annotations },
         tooltip: {
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          titleColor: '#1a1a1a',
+          bodyColor: '#1a1a1a',
+          borderColor: '#ddd',
+          borderWidth: 1,
           callbacks: {
-            filter: function(tooltipItem) {
+            filter: function (tooltipItem) {
               return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
+            },
+            title: function (context) {
+              const index = context[0].dataIndex
+              const time = labels[index]
+              return `Time: ${Number(time).toFixed(2)}s`
             }
           }
         }
@@ -242,19 +252,18 @@ export default function ComparisonView({ allProfiles }) {
         x: {
           type: 'linear',
           ticks: {
-            color: '#888',
+            color: '#1a1a1a',
             font: { size: 10 },
             maxTicksLimit: 8,
-            callback: function(value) {
-              const date = new Date(value * 1000)
-              return date.toTimeString().split(' ')[0]
+            callback: function (value) {
+              return Number(value).toFixed(2) + 's'
             }
           },
-          grid: { color: 'rgba(255,255,255,0.1)' }
+          grid: { color: 'rgba(0,0,0,0.1)' }
         },
         y: {
-          ticks: { color: '#888', font: { size: 10 } },
-          grid: { color: 'rgba(255,255,255,0.1)' }
+          ticks: { color: '#1a1a1a', font: { size: 10 } },
+          grid: { color: 'rgba(0,0,0,0.1)' }
         }
       },
       interaction: { mode: 'index', intersect: false }
@@ -265,14 +274,14 @@ export default function ComparisonView({ allProfiles }) {
 
   return (
     <div style={{
-      background: '#0a0a0a',
-      border: '1px solid #333',
+      background: '#f8f9fa',
+      border: '1px solid #ddd',
       borderRadius: 6,
       padding: 16,
       marginTop: 20
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h4 style={{ margin: 0, color: '#fff' }}>📊 Graph Comparison</h4>
+        <h4 style={{ margin: 0, color: '#1a1a1a' }}>📊 Graph Comparison</h4>
         <button
           onClick={addPanel}
           style={{
@@ -302,8 +311,8 @@ export default function ComparisonView({ allProfiles }) {
           <div
             key={panel.id}
             style={{
-              background: '#1a1a1a',
-              border: '1px solid #444',
+              background: '#ffffff',
+              border: '1px solid #ddd',
               borderRadius: 6,
               padding: 12,
               height: 550,
@@ -338,7 +347,7 @@ export default function ComparisonView({ allProfiles }) {
 
               {/* Profile dropdown */}
               <div>
-                <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 4 }}>
                   Profile:
                 </label>
                 <select
@@ -348,9 +357,9 @@ export default function ComparisonView({ allProfiles }) {
                     width: '100%',
                     padding: '6px 8px',
                     fontSize: 11,
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #555',
+                    background: '#ffffff',
+                    color: '#1a1a1a',
+                    border: '1px solid #ccc',
                     borderRadius: 3,
                     cursor: 'pointer'
                   }}
@@ -366,7 +375,7 @@ export default function ComparisonView({ allProfiles }) {
 
               {/* Saved Graph dropdown */}
               <div>
-                <label style={{ fontSize: 11, color: '#999', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 4 }}>
                   Saved Graph:
                 </label>
                 <select
@@ -377,19 +386,19 @@ export default function ComparisonView({ allProfiles }) {
                     width: '100%',
                     padding: '6px 8px',
                     fontSize: 11,
-                    background: '#2a2a2a',
-                    color: '#fff',
-                    border: '1px solid #555',
+                    background: '#ffffff',
+                    color: '#1a1a1a',
+                    border: '1px solid #ccc',
                     borderRadius: 3,
                     cursor: panel.profile && panel.savedGraphs.length > 0 ? 'pointer' : 'not-allowed',
                     opacity: panel.profile && panel.savedGraphs.length > 0 ? 1 : 0.5
                   }}
                 >
                   <option value="">
-                    {panel.loading ? 'Loading graphs...' : 
-                     !panel.profile ? 'Select a profile first' : 
-                     panel.savedGraphs.length === 0 ? 'No saved graphs' : 
-                     'Select a graph...'}
+                    {panel.loading ? 'Loading graphs...' :
+                      !panel.profile ? 'Select a profile first' :
+                        panel.savedGraphs.length === 0 ? 'No saved graphs' :
+                          'Select a graph...'}
                   </option>
                   {panel.savedGraphs.map(graph => (
                     <option key={graph.id} value={graph.id}>
@@ -401,10 +410,10 @@ export default function ComparisonView({ allProfiles }) {
 
               {/* Graph info */}
               {panel.selectedGraph && (
-                <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
                   <div>{panel.selectedGraph.description}</div>
                   <div style={{ marginTop: 2 }}>
-                    Type: {panel.selectedGraph.graph_type} | 
+                    Type: {panel.selectedGraph.graph_type} |
                     {panel.selectedGraph.message_type && ` Message: ${panel.selectedGraph.message_type}`}
                   </div>
                 </div>
@@ -412,7 +421,7 @@ export default function ComparisonView({ allProfiles }) {
             </div>
 
             {/* Graph display area */}
-            <div style={{ flex: 1, background: '#000', borderRadius: 4, padding: 8, minHeight: 0 }}>
+            <div style={{ flex: 1, background: '#ffffff', borderRadius: 4, padding: 8, minHeight: 0, border: '1px solid #e0e0e0' }}>
               {renderGraph(panel)}
             </div>
           </div>
