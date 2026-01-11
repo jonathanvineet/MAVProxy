@@ -8,6 +8,9 @@ export default function ComparisonView({ allProfiles }) {
   const [comparisonPanels, setComparisonPanels] = useState([
     { id: 1, profile: null, savedGraphs: [], selectedGraph: null, graphData: null, loading: false, showAIChat: false }
   ])
+  const [showExtrapolated, setShowExtrapolated] = useState(false)
+  const [extrapolatedPanel, setExtrapolatedPanel] = useState(null)
+  const [extrapolatedShowAIChat, setExtrapolatedShowAIChat] = useState(false)
   const chartRefs = useRef({}) // Stores { [panelId]: Chart.js instance }
   const containerRefs = useRef({}) // Stores { [panelId]: DOM element for graph container }
 
@@ -152,6 +155,99 @@ export default function ComparisonView({ allProfiles }) {
       return p
     }))
   }
+
+  // Check if extrapolation is possible
+  const canExtrapolate = () => {
+    const panelsWithGraphs = comparisonPanels.filter(p => p.selectedGraph && p.graphData)
+    if (panelsWithGraphs.length < 2) return false
+
+    const messageTypes = panelsWithGraphs.map(p => p.selectedGraph.message_type)
+    const firstType = messageTypes[0]
+    return messageTypes.every(type => type === firstType)
+  }
+
+  // Handle extrapolate button click
+  const handleExtrapolate = () => {
+    const panelsWithGraphs = comparisonPanels.filter(p => p.selectedGraph && p.graphData)
+    if (panelsWithGraphs.length < 2) return
+
+    // Define distinct color palettes for each panel
+    const COLOR_PALETTES = [
+      ['rgb(255, 99, 132)', 'rgb(255, 159, 64)', 'rgb(255, 205, 86)', 'rgb(75, 192, 192)', 'rgb(54, 162, 235)', 'rgb(153, 102, 255)', 'rgb(201, 203, 207)', 'rgb(255, 99, 71)'],
+      ['rgb(0, 128, 0)', 'rgb(34, 139, 34)', 'rgb(0, 255, 127)', 'rgb(46, 139, 87)', 'rgb(60, 179, 113)', 'rgb(144, 238, 144)', 'rgb(152, 251, 152)', 'rgb(143, 188, 143)'],
+      ['rgb(0, 0, 255)', 'rgb(65, 105, 225)', 'rgb(30, 144, 255)', 'rgb(0, 191, 255)', 'rgb(135, 206, 250)', 'rgb(70, 130, 180)', 'rgb(100, 149, 237)', 'rgb(176, 196, 222)'],
+      ['rgb(255, 0, 255)', 'rgb(218, 112, 214)', 'rgb(221, 160, 221)', 'rgb(238, 130, 238)', 'rgb(255, 0, 255)', 'rgb(186, 85, 211)', 'rgb(147, 112, 219)', 'rgb(138, 43, 226)'],
+      ['rgb(255, 140, 0)', 'rgb(255, 165, 0)', 'rgb(255, 215, 0)', 'rgb(184, 134, 11)', 'rgb(218, 165, 32)', 'rgb(238, 232, 170)', 'rgb(240, 230, 140)', 'rgb(189, 183, 107)'],
+      ['rgb(220, 20, 60)', 'rgb(178, 34, 34)', 'rgb(139, 0, 0)', 'rgb(165, 42, 42)', 'rgb(205, 92, 92)', 'rgb(233, 150, 122)', 'rgb(250, 128, 114)', 'rgb(255, 160, 122)'],
+    ]
+
+    // Combine all graph data
+    const combinedData = {}
+    const allTimestamps = new Set()
+    const normalizePoint = (p) => {
+      if (!p) return null
+      if (Array.isArray(p) && p.length >= 2) {
+        const t = Number(p[0])
+        const v = Number(p[1])
+        return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
+      }
+      const hasTV = p.t !== undefined && p.v !== undefined
+      const hasXY = p.x !== undefined && p.y !== undefined
+      if (!hasTV && !hasXY) return null
+      const t = Number(hasTV ? p.t : p.x)
+      const v = Number(hasTV ? p.v : p.y)
+      return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
+    }
+
+    panelsWithGraphs.forEach((panel, panelIdx) => {
+      const panelLabel = `Panel ${comparisonPanels.findIndex(p => p.id === panel.id) + 1}`
+      const colorPalette = COLOR_PALETTES[panelIdx % COLOR_PALETTES.length]
+
+      Object.keys(panel.graphData).forEach((field, fieldIdx) => {
+        const series = panel.graphData[field]
+        const color = colorPalette[fieldIdx % colorPalette.length]
+
+        if (Array.isArray(series)) {
+          const key = `${panelLabel}: ${field}`
+          combinedData[key] = { series, color }
+          series.forEach(p => {
+            const norm = normalizePoint(p)
+            if (norm) allTimestamps.add(norm.t)
+          })
+        } else if (series && typeof series === 'object') {
+          Object.keys(series).forEach((sub, subIdx) => {
+            const arr = series[sub]
+            if (!Array.isArray(arr)) return
+            const key = `${panelLabel}: ${field}.${sub}`
+            const subColor = colorPalette[(fieldIdx + subIdx) % colorPalette.length]
+            combinedData[key] = { series: arr, color: subColor }
+            arr.forEach(p => {
+              const norm = normalizePoint(p)
+              if (norm) allTimestamps.add(norm.t)
+            })
+          })
+        }
+      })
+    })
+
+    // Collect all flight modes from all panels
+    const allFlightModes = []
+    panelsWithGraphs.forEach(panel => {
+      if (panel.selectedGraph?.flight_modes) {
+        allFlightModes.push(...panel.selectedGraph.flight_modes)
+      }
+    })
+
+    setExtrapolatedPanel({
+      combinedData,
+      allTimestamps: Array.from(allTimestamps).sort((a, b) => a - b),
+      messageType: panelsWithGraphs[0].selectedGraph.message_type,
+      flightModes: allFlightModes,
+      normalizePoint
+    })
+    setShowExtrapolated(true)
+  }
+
 
   // Render a single graph
   const renderGraph = (panel) => {
@@ -323,10 +419,10 @@ export default function ComparisonView({ allProfiles }) {
       interaction: { mode: 'index', intersect: false }
     }
 
-    return <Line 
-      ref={(ref) => { chartRefs.current[panel.id] = ref }} 
-      data={chartData} 
-      options={chartOptions} 
+    return <Line
+      ref={(ref) => { chartRefs.current[panel.id] = ref }}
+      data={chartData}
+      options={chartOptions}
     />
   }
 
@@ -340,21 +436,41 @@ export default function ComparisonView({ allProfiles }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h4 style={{ margin: 0, color: '#1a1a1a' }}>📊 Graph Comparison</h4>
-        <button
-          onClick={addPanel}
-          style={{
-            fontSize: 11,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            background: '#0a7ea4',
-            color: '#fff',
-            border: '1px solid #0d99c6',
-            borderRadius: 3,
-            fontWeight: 'bold'
-          }}
-        >
-          ➕ Add Panel
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={handleExtrapolate}
+            disabled={!canExtrapolate()}
+            title={!canExtrapolate() ? 'Select at least 2 graphs of the same message type to extrapolate' : 'Combine all graphs into one'}
+            style={{
+              fontSize: 11,
+              padding: '6px 12px',
+              cursor: canExtrapolate() ? 'pointer' : 'not-allowed',
+              background: canExtrapolate() ? '#6a1b9a' : '#ccc',
+              color: '#fff',
+              border: canExtrapolate() ? '1px solid #8e24aa' : '1px solid #999',
+              borderRadius: 3,
+              fontWeight: 'bold',
+              opacity: canExtrapolate() ? 1 : 0.6
+            }}
+          >
+            📈 Extrapolate Graphs
+          </button>
+          <button
+            onClick={addPanel}
+            style={{
+              fontSize: 11,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              background: '#0a7ea4',
+              color: '#fff',
+              border: '1px solid #0d99c6',
+              borderRadius: 3,
+              fontWeight: 'bold'
+            }}
+          >
+            ➕ Add Panel
+          </button>
+        </div>
       </div>
 
       <div style={{
@@ -517,7 +633,7 @@ export default function ComparisonView({ allProfiles }) {
             )}
 
             {/* Graph display area */}
-            <div 
+            <div
               ref={(ref) => { containerRefs.current[panel.id] = ref }}
               style={{ flex: 1, background: '#ffffff', borderRadius: 4, padding: 8, minHeight: 0, border: '1px solid #e0e0e0' }}
             >
@@ -543,6 +659,201 @@ export default function ComparisonView({ allProfiles }) {
       {comparisonPanels.length > 2 && (
         <div style={{ fontSize: 11, color: '#666', textAlign: 'center', fontStyle: 'italic' }}>
           💡 Showing {comparisonPanels.length} panels. Scroll to view more or remove panels to reduce clutter.
+        </div>
+      )}
+
+      {/* Extrapolated Panel */}
+      {showExtrapolated && extrapolatedPanel && (
+        <div style={{
+          background: '#ffffff',
+          border: '2px solid #6a1b9a',
+          borderRadius: 6,
+          padding: 16,
+          marginTop: 20
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h4 style={{ margin: 0, color: '#6a1b9a', fontSize: 14 }}>
+              📈 Extrapolated Graph - {extrapolatedPanel.messageType}
+            </h4>
+            <button
+              onClick={() => setShowExtrapolated(false)}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                cursor: 'pointer',
+                background: '#8b4545',
+                color: '#fff',
+                border: '1px solid #a55555',
+                borderRadius: 3,
+                fontWeight: 'bold'
+              }}
+            >
+              ✕ Close
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => handleExportGraphAsPNG('extrapolated')}
+              style={{
+                padding: '8px 12px',
+                background: '#4CAF50',
+                border: 'none',
+                borderRadius: 4,
+                color: '#fff',
+                fontSize: 11,
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              💾 Save PNG
+            </button>
+            <button
+              onClick={() => setExtrapolatedShowAIChat(!extrapolatedShowAIChat)}
+              style={{
+                padding: '8px 12px',
+                background: extrapolatedShowAIChat ? '#ff6b6b' : '#0a7ea4',
+                border: 'none',
+                borderRadius: 4,
+                color: '#fff',
+                fontSize: 11,
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              {extrapolatedShowAIChat ? '✕ Close Mavvy' : '🤖 Ask Mavvy'}
+            </button>
+          </div>
+
+          <div
+            ref={(ref) => { containerRefs.current['extrapolated'] = ref }}
+            style={{
+              height: 600,
+              background: '#ffffff',
+              borderRadius: 4,
+              padding: 12,
+              border: '1px solid #e0e0e0'
+            }}
+          >
+            {(() => {
+              const labels = extrapolatedPanel.allTimestamps
+              const datasets = []
+
+              Object.keys(extrapolatedPanel.combinedData).forEach((key) => {
+                const { series, color } = extrapolatedPanel.combinedData[key]
+                const dataMap = {}
+                series.forEach(p => {
+                  const norm = extrapolatedPanel.normalizePoint(p)
+                  if (norm) dataMap[norm.t] = norm.v
+                })
+                const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+                datasets.push({
+                  label: key,
+                  data: values,
+                  borderColor: color,
+                  backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                  borderWidth: 2,
+                  tension: 0.1,
+                  pointRadius: 0,
+                  pointHoverRadius: 4,
+                  spanGaps: true
+                })
+              })
+
+              const chartData = { labels, datasets }
+
+              // Build flight mode annotations
+              const annotations = {}
+              if (extrapolatedPanel.flightModes) {
+                extrapolatedPanel.flightModes.forEach((fm, idx) => {
+                  const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+                  annotations[`mode-${idx}`] = {
+                    type: 'box',
+                    xMin: fm.start,
+                    xMax: fm.end,
+                    yMin: 'min',
+                    yMax: 'max',
+                    backgroundColor: color,
+                    borderWidth: 0,
+                    drawTime: 'beforeDatasetsDraw'
+                  }
+                })
+              }
+
+              const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                  legend: {
+                    labels: { color: '#1a1a1a', font: { size: 10 } },
+                    position: 'top',
+                    maxHeight: 100
+                  },
+                  annotation: { annotations },
+                  tooltip: {
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    titleColor: '#1a1a1a',
+                    bodyColor: '#1a1a1a',
+                    borderColor: '#ddd',
+                    borderWidth: 1,
+                    callbacks: {
+                      filter: function (tooltipItem) {
+                        return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
+                      },
+                      title: function (context) {
+                        const index = context[0].dataIndex
+                        const time = labels[index]
+                        return `Time: ${Number(time).toFixed(2)}s`
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    type: 'linear',
+                    ticks: {
+                      color: '#1a1a1a',
+                      font: { size: 10 },
+                      maxTicksLimit: 8,
+                      callback: function (value) {
+                        return Number(value).toFixed(2) + 's'
+                      }
+                    },
+                    grid: { color: 'rgba(0,0,0,0.1)' }
+                  },
+                  y: {
+                    ticks: { color: '#1a1a1a', font: { size: 10 } },
+                    grid: { color: 'rgba(0,0,0,0.1)' }
+                  }
+                },
+                interaction: { mode: 'index', intersect: false }
+              }
+
+              return <Line
+                ref={(ref) => { chartRefs.current['extrapolated'] = ref }}
+                data={chartData}
+                options={chartOptions}
+              />
+            })()}
+          </div>
+
+          {/* AI Chat for Extrapolated Panel */}
+          {extrapolatedShowAIChat && extrapolatedPanel && (
+            <GraphAIChat
+              seriesData={extrapolatedPanel.combinedData ? Object.keys(extrapolatedPanel.combinedData).reduce((acc, key) => {
+                const { series } = extrapolatedPanel.combinedData[key]
+                acc[key] = series
+                return acc
+              }, {}) : {}}
+              flightModes={extrapolatedPanel.flightModes || []}
+              graphName={`Extrapolated - ${extrapolatedPanel.messageType}`}
+              analysis={null}
+              isVisible={extrapolatedShowAIChat}
+              onClose={() => setExtrapolatedShowAIChat(false)}
+              chartRef={{ current: containerRefs.current['extrapolated'] }}
+            />
+          )}
         </div>
       )}
     </div>
