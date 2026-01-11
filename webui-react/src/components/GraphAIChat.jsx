@@ -215,43 +215,50 @@ Keep under 100 words. NO extra explanations.`
     setLoading(true)
 
     try {
-      const context = prepareGraphContext()
-      
-      // Build system prompt with MAVExplorer domain knowledge - only when actually sending a message
-      const systemPrompt = `UAV flight telemetry. Output ONLY this format:\n\n**What the graph shows**\n- [fact 1]\n- [fact 2]\n\n**✅ What this means**\n- [issue 1]\n- [issue 2]\n\n**🔧 Suggestions**\n🔹 [fix 1]\n🔹 [fix 2]\n\nSTOP after 100 words. NO paragraphs.`
+      // Capture the graph as an image to provide visual context
+      if (!chartRef?.current) {
+        throw new Error('Graph not available for capture')
+      }
 
-      // Send 100 evenly distributed data points across the dataset
-      const dataPoints = Object.entries(context.stats)
-        .slice(0, 3)
-        .map(([field, stat]) => {
-          const points = seriesData[field] || []
-          console.log(`🔍 Field: ${field}, Total points: ${points.length}`)
-          
-          // Get up to 100 evenly distributed samples across entire dataset
-          const sampleCount = Math.min(100, points.length)
-          const step = Math.max(1, Math.floor(points.length / sampleCount))
-          const samples = []
-          for (let i = 0; i < points.length && samples.length < sampleCount; i += step) {
-            samples.push(points[i].v.toFixed(1))
-          }
-          
-          console.log(`📊 ${field} first 20 samples:`, samples.slice(0, 20))
-          console.log(`📊 ${field} total samples sent: ${samples.length}`)
-          
-          return `${field}: range ${stat.min} to ${stat.max}, avg ${stat.avg}, ${stat.count} total points. Values: ${samples.join(',')}`
-        })
-        .join(' | ')
+      console.log('📸 Capturing graph as image for follow-up question...')
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: '#1a1a1a',
+        scale: 2,
+        logging: false
+      })
       
-      console.log('📤 Data string length:', dataPoints.length, 'characters')
+      const imageBase64 = canvas.toDataURL('image/png').split(',')[1]
+      console.log('✅ Graph captured, image size:', Math.round(imageBase64.length / 1024), 'KB')
 
-      // Prepare conversation history - filter out system messages for Gemini
+      const systemPrompt = `You are analyzing a UAV/drone flight telemetry graph. Output ONLY this format:
+
+**What the graph shows**
+- [observation 1]
+- [observation 2]
+
+**✅ What this means**
+- [diagnosis 1]
+- [diagnosis 2]
+
+**🔧 Suggestions**
+🔹 [action 1]
+🔹 [action 2]
+
+Keep under 100 words. NO extra explanations.`
+
+      // For follow-up questions, include recent conversation context and the graph image
       const conversationMessages = [
-        { role: 'system', content: systemPrompt },
-        ...messages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-4),
-        { role: 'user', content: `${input}\nUAV Telemetry Graph: ${context.graphName}\nData: ${dataPoints}` }
+        { text: systemPrompt },
+        {
+          inlineData: {
+            mimeType: 'image/png',
+            data: imageBase64
+          }
+        },
+        { text: `Graph: ${graphName || 'Custom Graph'}\n\nUser question: ${input}` }
       ]
 
-      // Call backend endpoint - only when user explicitly sends a message
+      // Call backend endpoint
       const response = await api.sendAIMessage(conversationMessages)
 
       const assistantMessage = {
