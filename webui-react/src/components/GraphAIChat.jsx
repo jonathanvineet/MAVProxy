@@ -7,6 +7,7 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [graphImageData, setGraphImageData] = useState(null) // Store captured graph image
   const [lastRequestTime, setLastRequestTime] = useState(0)
   const [rateLimitError, setRateLimitError] = useState(false)
   const messagesEndRef = useRef(null)
@@ -124,7 +125,7 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
         throw new Error('Graph not available for capture')
       }
 
-      console.log('📸 Capturing graph as image...')
+      console.log('📸 Capturing graph as image ONCE for this session...')
       const canvas = await html2canvas(chartRef.current, {
         backgroundColor: '#1a1a1a',
         scale: 2,
@@ -133,6 +134,10 @@ export default function GraphAIChat({ seriesData, flightModes, graphName, analys
       
       const imageBase64 = canvas.toDataURL('image/png').split(',')[1]
       console.log('✅ Graph captured, image size:', Math.round(imageBase64.length / 1024), 'KB')
+      
+      // Store the image for future follow-up questions
+      setGraphImageData(imageBase64)
+      setIsInitialized(true)
 
       const systemPrompt = `You are analyzing a UAV/drone flight telemetry graph. Output ONLY this format:
 
@@ -215,51 +220,25 @@ Keep under 100 words. NO extra explanations.`
     setLoading(true)
 
     try {
-      // Capture the graph as an image to provide visual context
-      if (!chartRef?.current) {
-        throw new Error('Graph not available for capture')
-      }
-
-      console.log('📸 Capturing graph as image for follow-up question...')
-      const canvas = await html2canvas(chartRef.current, {
-        backgroundColor: '#1a1a1a',
-        scale: 2,
-        logging: false
+      // Build conversation history in OpenAI format for Gemini backend
+      const conversationHistory = []
+      
+      // Add all previous messages from conversation
+      messages.forEach(msg => {
+        conversationHistory.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        })
       })
       
-      const imageBase64 = canvas.toDataURL('image/png').split(',')[1]
-      console.log('✅ Graph captured, image size:', Math.round(imageBase64.length / 1024), 'KB')
+      // Add current user question
+      conversationHistory.push({
+        role: 'user',
+        parts: [{ text: input }]
+      })
 
-      const systemPrompt = `You are analyzing a UAV/drone flight telemetry graph. Output ONLY this format:
-
-**What the graph shows**
-- [observation 1]
-- [observation 2]
-
-**✅ What this means**
-- [diagnosis 1]
-- [diagnosis 2]
-
-**🔧 Suggestions**
-🔹 [action 1]
-🔹 [action 2]
-
-Keep under 100 words. NO extra explanations.`
-
-      // For follow-up questions, include recent conversation context and the graph image
-      const conversationMessages = [
-        { text: systemPrompt },
-        {
-          inlineData: {
-            mimeType: 'image/png',
-            data: imageBase64
-          }
-        },
-        { text: `Graph: ${graphName || 'Custom Graph'}\n\nUser question: ${input}` }
-      ]
-
-      // Call backend endpoint
-      const response = await api.sendAIMessage(conversationMessages)
+      // Call backend with conversation history (text-only, no image re-capture)
+      const response = await api.sendAIMessage(conversationHistory)
 
       const assistantMessage = {
         role: 'assistant',
