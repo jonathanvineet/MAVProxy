@@ -220,21 +220,21 @@ Keep under 100 words. NO extra explanations.`
     setLoading(true)
 
     try {
-      // Build conversation history in OpenAI format for Gemini backend
+      // Build conversation history in OpenAI format for Gemini backend to convert
       const conversationHistory = []
       
       // Add all previous messages from conversation
       messages.forEach(msg => {
         conversationHistory.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
+          role: msg.role,
+          content: msg.content
         })
       })
       
       // Add current user question
       conversationHistory.push({
         role: 'user',
-        parts: [{ text: input }]
+        content: input
       })
 
       // Call backend with conversation history (text-only, no image re-capture)
