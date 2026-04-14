@@ -81,13 +81,16 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
         const res = await api.evalGraph(token, predefinedGraph.name, decimate)
         if (!cancelled) {
           const data = {}
-          if (res.data.series) {
+          if (res.data.series && typeof res.data.series === 'object') {
             Object.entries(res.data.series).forEach(([expr, points]) => {
-              data[expr] = points
+              // Only store if it's an array
+              if (Array.isArray(points)) {
+                data[expr] = points
+              }
             })
           }
           console.log('Series keys:', Object.keys(data))
-          const totalPoints = Object.values(data).reduce((n, arr) => n + (arr?.length || 0), 0)
+          const totalPoints = Object.values(data).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0)
           console.log('Total points:', totalPoints)
           setSeriesData(data)
         }
@@ -125,7 +128,13 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
             fields.map(async field => {
               try {
                 const res = await api.getTimeseries(token, selected.msg, field)
-                allData[field] = res.data.series || []
+                const series = res.data.series || []
+                // Only store if it's an array
+                if (Array.isArray(series)) {
+                  allData[field] = series
+                } else {
+                  allData[field] = []
+                }
               } catch (e) {
                 console.error(`Error fetching ${field}:`, e)
                 allData[field] = []
@@ -138,7 +147,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
           // Single field
           const res = await api.getTimeseries(token, selected.msg, selected.field)
           if (!cancelled) {
-            setSeriesData({ [selected.field]: res.data.series || [] })
+            const series = res.data.series || []
+            setSeriesData({ [selected.field]: Array.isArray(series) ? series : [] })
           }
         }
       } catch (e) {
@@ -281,50 +291,65 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
   // Collect all unique timestamps across all series
   const allTimestamps = new Set()
   Object.values(seriesData).forEach(series => {
-    series.forEach(p => allTimestamps.add(p.t))
+    if (Array.isArray(series)) {
+      series.forEach(p => {
+        if (p && (p.t !== undefined || p.x !== undefined)) {
+          allTimestamps.add(p.t !== undefined ? p.t : p.x)
+        }
+      })
+    }
   })
   const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+  
+  // Handle empty data
+  if (absoluteTimestamps.length === 0) {
+    return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>No data available for this selection</div>
+  }
   
   // Convert to relative time starting from 0, in seconds (divide by 100 for deciseconds)
   const minTime = absoluteTimestamps[0]
   const labels = absoluteTimestamps.map(t => (t - minTime) / 100)
 
   // Build datasets for each field
-  const datasets = Object.keys(seriesData).map((field, idx) => {
-    const series = seriesData[field]
-    const color = SERIES_COLORS[idx % SERIES_COLORS.length]
+  const datasets = Object.keys(seriesData)
+    .filter(field => Array.isArray(seriesData[field]))
+    .map((field, idx) => {
+      const series = seriesData[field]
+      const color = SERIES_COLORS[idx % SERIES_COLORS.length]
 
-    // Create a map of absolute timestamp to value
-    const dataMap = {}
-    series.forEach(p => {
-      const t = p.t ?? p.x
-      const v = p.v ?? p.y
-      if (t !== undefined && v !== undefined) {
-        dataMap[Number(t)] = Number(v)
+      // Create a map of absolute timestamp to value
+      const dataMap = {}
+      if (Array.isArray(series)) {
+        series.forEach(p => {
+          const t = p.t ?? p.x
+          const v = p.v ?? p.y
+          if (t !== undefined && v !== undefined) {
+            dataMap[Number(t)] = Number(v)
+          }
+        })
+      }
+
+      // Map labels to values (null if not present) - use absolute timestamps for lookup
+      const values = absoluteTimestamps.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+
+      // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
+      // For custom graphs, use message.field format
+      const label = predefinedGraph ? field : `${selected.msg}.${field}`
+
+      console.log(`[Render] Dataset ${label}:`, { points: values.filter(v => v !== null).length, total: values.length })
+
+      return {
+        label: label,
+        data: values,
+        borderColor: color,
+        backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+        borderWidth: 2,
+        tension: 0.1,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        spanGaps: true
       }
     })
-
-    // Map labels to values (null if not present) - use absolute timestamps for lookup
-    const values = absoluteTimestamps.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
-
-    // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
-    // For custom graphs, use message.field format
-    const label = predefinedGraph ? field : `${selected.msg}.${field}`
-
-    console.log(`[Render] Dataset ${label}:`, { points: values.filter(v => v !== null).length, total: values.length })
-
-    return {
-      label: label,
-      data: values,
-      borderColor: color,
-      backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-      borderWidth: 2,
-      tension: 0.1,
-      pointRadius: 0,
-      pointHoverRadius: 4,
-      spanGaps: true
-    }
-  })
 
   // Build flight mode annotations as background regions
   const annotations = {}
