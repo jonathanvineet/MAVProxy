@@ -255,10 +255,13 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     if (flightModes && flightModes.length > 0) {
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+        // Convert flight mode times to relative time (same as chart x-axis)
+        const fmStart = fm.start - minTime
+        const fmEnd = fm.end - minTime
         annotations[`mode-${idx}`] = {
           type: 'box',
-          xMin: fm.start,
-          xMax: fm.end,
+          xMin: fmStart,
+          xMax: fmEnd,
           yMin: 'min',
           yMax: 'max',
           backgroundColor: color,
