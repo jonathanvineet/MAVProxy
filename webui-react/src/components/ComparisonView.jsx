@@ -316,7 +316,7 @@ export default function ComparisonView({ allProfiles }) {
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
           label: field,
-          data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
+          data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
           borderColor: color,
           backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
           borderWidth: 2,
@@ -341,7 +341,7 @@ export default function ComparisonView({ allProfiles }) {
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
             label: `${field}.${sub}`,
-            data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
+            data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
             borderColor: color,
             backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
             borderWidth: 2,
@@ -747,7 +747,7 @@ export default function ComparisonView({ allProfiles }) {
                 const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
                 datasets.push({
                   label: key,
-                  data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
+                  data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
                   borderColor: color,
                   backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
                   borderWidth: 2,
