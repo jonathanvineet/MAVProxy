@@ -301,10 +301,22 @@ export default function ComparisonView({ allProfiles }) {
     const labels = Array.from(allTimestamps).sort((a, b) => a - b)
     const minTime = labels.length > 0 ? labels[0] : 0
 
+    const normalizeData = (data) => {
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === 'object' && data.series && Array.isArray(data.series)) return data.series;
+      if (data && typeof data === 'object' && !data.series) {
+        // Handle case where it's a nested object of series
+        return data; 
+      }
+      return [];
+    };
+
     const datasets = []
     let colorIdx = 0
     Object.keys(panel.graphData).forEach((field) => {
-      const series = panel.graphData[field]
+      const rawSeries = panel.graphData[field]
+      const series = normalizeData(rawSeries)
+      
       if (Array.isArray(series)) {
         const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
         colorIdx += 1
@@ -316,7 +328,7 @@ export default function ComparisonView({ allProfiles }) {
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
           label: field,
-          data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
+          data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
           borderColor: color,
           backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
           borderWidth: 2,
@@ -329,7 +341,7 @@ export default function ComparisonView({ allProfiles }) {
       }
       if (series && typeof series === 'object') {
         Object.keys(series).forEach(sub => {
-          const arr = series[sub]
+          const arr = normalizeData(series[sub])
           if (!Array.isArray(arr)) return
           const color = SERIES_COLORS[colorIdx % SERIES_COLORS.length]
           colorIdx += 1
@@ -341,7 +353,7 @@ export default function ComparisonView({ allProfiles }) {
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
             label: `${field}.${sub}`,
-            data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
+            data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
             borderColor: color,
             backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
             borderWidth: 2,
@@ -737,8 +749,18 @@ export default function ComparisonView({ allProfiles }) {
               const minTime = labels.length > 0 ? labels[0] : 0
               const datasets = []
 
+              const normalizeData = (data) => {
+                if (Array.isArray(data)) return data;
+                if (data && typeof data === 'object' && data.series && Array.isArray(data.series)) return data.series;
+                return [];
+              };
+
               Object.keys(extrapolatedPanel.combinedData).forEach((key) => {
-                const { series, color } = extrapolatedPanel.combinedData[key]
+                const item = extrapolatedPanel.combinedData[key]
+                const rawSeries = item.series || item
+                const series = normalizeData(rawSeries)
+                const color = item.color || '#000'
+                
                 const dataMap = {}
                 series.forEach(p => {
                   const norm = extrapolatedPanel.normalizePoint(p)
@@ -747,7 +769,7 @@ export default function ComparisonView({ allProfiles }) {
                 const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
                 datasets.push({
                   label: key,
-                  data: (values || []).map((v, i) => ({ x: labels[i] - minTime, y: v })),
+                  data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
                   borderColor: color,
                   backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
                   borderWidth: 2,
