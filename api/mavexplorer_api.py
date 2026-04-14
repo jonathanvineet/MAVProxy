@@ -188,76 +188,96 @@ def evaluate_graph_on_file(graph_def, path, decimate=1):
         return result
 
 
-def extract_timeseries_cache(path, max_points_per_field=10000):
-    """Extract timeseries data for all message/field combinations and cache them.
+def normalize_timestamp(t):
+    """Convert timestamp to seconds (float).
+    
+    Handles multiple timestamp formats:
+    - Microseconds (>1e12): divide by 1e6
+    - Milliseconds (1e6-1e12): divide by 1e3
+    - Already in seconds: return as-is
+    """
+    if t is None:
+        return None
+    
+    t = float(t)
+    
+    # If it's clearly in microseconds (>1 trillion)
+    if t > 1e12:
+        return t / 1e6
+    # If it's clearly in milliseconds (between 1 million and 1 trillion)
+    elif t > 1e6:
+        return t / 1e3
+    # Otherwise assume it's already in seconds
+    else:
+        return t
+
+
+def extract_timeseries_cache(path, max_points_per_field=1000, decimate_factor=50):
+    """Extract timeseries data for all message/field combinations in a single pass.
     
     This creates a cache that can be stored in MongoDB so timeseries requests
     don't need the original file on serverless deployments.
     
+    Uses single-pass algorithm for efficiency on serverless (Vercel timeout limits).
+    
     Args:
         path: Path to the log file
-        max_points_per_field: Maximum points to cache per field (to avoid huge data)
+        max_points_per_field: Maximum points to cache per field
+        decimate_factor: Decimate every N messages (higher = smaller cache)
     
     Returns:
         Dictionary with 'msg_field' keys mapping to series data
     """
     cache = {}
+    msg_indices = {}  # Track index per message type to decimate
+    
     try:
         mlog = mavutil.mavlink_connection(path)
         
-        # First pass: collect all message types and fields
-        all_msg_fields = {}
-        mlog.rewind()
+        # Single pass through entire file
         while True:
             m = mlog.recv_match()
             if m is None:
                 break
+            
             msg_type = m.get_type()
-            if msg_type not in all_msg_fields:
-                all_msg_fields[msg_type] = set()
-            all_msg_fields[msg_type].update(k for k in m.to_dict().keys() if k != '_time')
-        
-        # Second pass: extract timeseries for each message/field
-        for msg_type in sorted(all_msg_fields.keys()):
-            for field in sorted(all_msg_fields[msg_type]):
-                # Only cache numeric fields
-                mlog.rewind()
-                series = []
-                idx = 0
-                max_idx = max_points_per_field * 10  # Decimate aggressively
+            
+            # Initialize tracking for this message type
+            if msg_type not in msg_indices:
+                msg_indices[msg_type] = 0
+            
+            # Only process every Nth message to decimate
+            msg_indices[msg_type] += 1
+            if msg_indices[msg_type] % decimate_factor != 0:
+                continue
+            
+            try:
+                # Get timestamp once
+                t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
+                t = normalize_timestamp(t)
                 
-                while True:
-                    m = mlog.recv_match(type=msg_type)
-                    if m is None:
-                        break
-                    
-                    try:
-                        # Get timestamp
-                        t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
-                        if t is not None and t > 1e12:
-                            t = t / 1e6
-                        
-                        # Get field value
-                        v = m.to_dict().get(field)
-                        if v is None:
-                            v = getattr(m, field, None)
-                        
-                        # Only cache numeric values
-                        if isinstance(v, (int, float)) and t is not None:
-                            # Decimate to avoid huge caches
-                            if idx % 10 == 0 and len(series) < max_points_per_field:
-                                series.append({'t': t, 'v': float(v)})
-                        
-                        idx += 1
-                        if idx > max_idx:  # Safety limit
-                            break
-                    except:
+                if t is None:
+                    continue
+                
+                # Extract all numeric fields from this message
+                msg_dict = m.to_dict()
+                for field, v in msg_dict.items():
+                    if field.startswith('_'):
                         continue
-                
-                # Only cache if we have data
-                if series:
-                    cache_key = f"{msg_type}_{field}"
-                    cache[cache_key] = series
+                    
+                    # Only cache numeric values
+                    if isinstance(v, (int, float)):
+                        cache_key = f"{msg_type}_{field}"
+                        
+                        # Initialize cache for this field if needed
+                        if cache_key not in cache:
+                            cache[cache_key] = []
+                        
+                        # Add point if under limit
+                        if len(cache[cache_key]) < max_points_per_field:
+                            cache[cache_key].append({'t': t, 'v': float(v)})
+            except:
+                continue
         
         return cache
     except Exception as e:

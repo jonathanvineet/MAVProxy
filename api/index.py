@@ -397,16 +397,9 @@ def upload_chunk():
                 logger.error(f"Failed to analyze file: {e}", exc_info=True)
                 return jsonify({'error': 'failed to parse log: ' + str(e)}), 500
             
-            # Build timeseries cache for common msg/field combinations
-            # This allows timeseries requests to work on serverless even after file is gone
-            logger.info("Building timeseries cache...")
-            try:
-                timeseries_cache = mavexplorer_api.extract_timeseries_cache(decompressed_path)
-                out['timeseries_cache'] = timeseries_cache
-                logger.info(f"Cached {len(timeseries_cache)} msg/field timeseries")
-            except Exception as e:
-                logger.warning(f"Failed to build timeseries cache: {e}")
-                out['timeseries_cache'] = {}
+            # Initialize empty timeseries cache - will be populated on-demand
+            # (Don't build it here as it blocks the response on Vercel)
+            out['timeseries_cache'] = {}
             
             # Store results in memory and MongoDB
             token = str(uuid.uuid4())
@@ -622,9 +615,10 @@ def timeseries():
                 'cached': True
             })
         
-        # We have the analysis but not the file and no cached data - can't extract timeseries
+        # No cached data and file not in memory - can't extract timeseries
+        # Try to build cache on-demand if we still have the file in memory somewhere
         return jsonify({
-            'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session, or run MAVProxy locally for unrestricted file access.'
+            'error': 'Timeseries data not cached. This typically means the analysis was performed on a different Vercel instance. Please re-upload the file or use the "Save Graph" feature.'
         }), 400
     
     try:
@@ -638,8 +632,9 @@ def timeseries():
             if m.get_type() != msg:
                 continue
             t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
-            if t is not None and t > 1e12:
-                t = t / 1e6
+            t = mavexplorer_api.normalize_timestamp(t)
+            if t is None:
+                continue
             v = m.to_dict().get(field)
             if v is None:
                 continue

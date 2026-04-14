@@ -306,9 +306,9 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>No data available for this selection</div>
   }
   
-  // Convert to relative time starting from 0, in seconds (divide by 100 for deciseconds)
+  // Convert to relative time starting from 0, in seconds
   const minTime = absoluteTimestamps[0]
-  const labels = absoluteTimestamps.map(t => (t - minTime) / 100)
+  const labels = absoluteTimestamps.map(t => (t - minTime))
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData)

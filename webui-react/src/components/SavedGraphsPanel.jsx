@@ -183,7 +183,10 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         })
       }
     })
-    const labels = Array.from(allTimestamps).sort((a, b) => a - b)
+    const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+    // Convert to relative time starting from 0
+    const minTime = absoluteTimestamps[0]
+    const labels = absoluteTimestamps.map(t => (t - minTime))
 
     const datasets = []
     let colorIdx = 0
@@ -271,7 +274,11 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       maintainAspectRatio: false,
       animation: false,
       plugins: {
-        legend: { labels: { color: '#1a1a1a' }, position: 'top' },
+        legend: { 
+          display: true,
+          labels: { color: '#1a1a1a' }, 
+          position: 'top' 
+        },
         annotation: { annotations },
         tooltip: {
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
