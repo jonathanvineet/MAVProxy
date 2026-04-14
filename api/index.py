@@ -397,6 +397,17 @@ def upload_chunk():
                 logger.error(f"Failed to analyze file: {e}", exc_info=True)
                 return jsonify({'error': 'failed to parse log: ' + str(e)}), 500
             
+            # Build timeseries cache for common msg/field combinations
+            # This allows timeseries requests to work on serverless even after file is gone
+            logger.info("Building timeseries cache...")
+            try:
+                timeseries_cache = mavexplorer_api.extract_timeseries_cache(decompressed_path)
+                out['timeseries_cache'] = timeseries_cache
+                logger.info(f"Cached {len(timeseries_cache)} msg/field timeseries")
+            except Exception as e:
+                logger.warning(f"Failed to build timeseries cache: {e}")
+                out['timeseries_cache'] = {}
+            
             # Store results in memory and MongoDB
             token = str(uuid.uuid4())
             UPLOADS[token] = {'tmpdir': tmpdir, 'path': decompressed_path, 'analysis': out}
@@ -577,77 +588,69 @@ def timeseries():
     token = request.args.get('token')
     msg = request.args.get('msg')
     field = request.args.get('field')
-    decimate_param = request.args.get('decimate')
+    decimate = int(request.args.get('decimate') or 1)
     
-    # Validate required parameters
     if not token:
         return jsonify({'error': 'token required'}), 400
     
-    if not msg:
-        return jsonify({'error': 'msg parameter required'}), 400
-    
-    if not field:
-        return jsonify({'error': 'field parameter required'}), 400
-    
-    # Parse and validate decimate parameter
-    try:
-        decimate = int(decimate_param) if decimate_param else 1
-        if decimate < 1:
-            decimate = 1
-    except (ValueError, TypeError):
-        return jsonify({'error': 'decimate must be an integer'}), 400
+    if not msg or not field:
+        return jsonify({'error': 'msg and field required'}), 400
     
     # First check memory (for local/immediate requests)
-    path = None
     if token in UPLOADS:
         path = UPLOADS[token]['path']
     else:
         # Try to get from MongoDB (for Vercel serverless where memory is lost)
-        if mongo_manager.enabled:
-            analysis = mongo_manager.get_analysis_by_token(token)
-            if not analysis:
-                return jsonify({
-                    'error': 'Analysis not found. On Vercel serverless deployments, files are only available immediately after upload. Please use the "Save Graph" feature to persist graph data, or run MAVProxy locally for full functionality.'
-                }), 400
-        else:
+        analysis = mongo_manager.get_analysis_by_token(token) if mongo_manager.enabled else None
+        if not analysis:
             return jsonify({
                 'error': 'File not found. On Vercel serverless deployments, files are only available immediately after upload. Please use the "Save Graph" feature to persist graph data, or run MAVProxy locally for full functionality.'
             }), 400
-    
-    # If we have a path, extract timeseries from file
-    if path and os.path.exists(path):
-        try:
-            if mavutil is None:
-                return jsonify({'error': 'pymavlink not installed on server'}), 500
-            
-            series = []
-            mlog = mavutil.mavlink_connection(path)
-            idx = 0
-            while True:
-                m = mlog.recv_match()
-                if m is None:
-                    break
-                if m.get_type() != msg:
-                    continue
-                t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
-                if t is not None and t > 1e12:
-                    t = t / 1e6
-                v = m.to_dict().get(field)
-                if v is None:
-                    continue
-                if idx % decimate == 0:
-                    series.append({'t': t, 'v': v})
-                idx += 1
-            
-            return jsonify({'msg': msg, 'field': field, 'series': series})
-        except Exception as e:
-            logger.error(f"Failed to extract timeseries: {e}", exc_info=True)
-            return jsonify({'error': 'failed to extract timeseries: ' + str(e)}), 500
-    else:
-        # File not available - provide helpful error message
+        
+        # Check if we have cached timeseries data in the analysis record
+        analysis_data = analysis.get('analysis_data', {})
+        cached_timeseries = analysis_data.get('timeseries_cache', {})
+        cache_key = f"{msg}_{field}"
+        
+        if cache_key in cached_timeseries:
+            # Return cached timeseries data
+            logger.info(f"Returning cached timeseries for {cache_key}")
+            return jsonify({
+                'msg': msg, 
+                'field': field, 
+                'series': cached_timeseries[cache_key],
+                'cached': True
+            })
+        
+        # We have the analysis but not the file and no cached data - can't extract timeseries
         return jsonify({
             'error': 'Raw file data not available in serverless environment. Please use the "Save Graph" feature to save graphs during the initial upload session, or run MAVProxy locally for unrestricted file access.'
         }), 400
+    
+    try:
+        series = []
+        mlog = mavutil.mavlink_connection(path)
+        idx = 0
+        while True:
+            m = mlog.recv_match()
+            if m is None:
+                break
+            if m.get_type() != msg:
+                continue
+            t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
+            if t is not None and t > 1e12:
+                t = t / 1e6
+            v = m.to_dict().get(field)
+            if v is None:
+                continue
+            if idx % decimate == 0:
+                series.append({'t': t, 'v': v})
+            idx += 1
+    except Exception as e:
+        logger.error(f"Failed to extract timeseries: {e}", exc_info=True)
+        return jsonify({'error': 'failed to extract timeseries: ' + str(e)}), 500
+    
+    return jsonify({'msg': msg, 'field': field, 'series': series})
 
 @app.route('/graphs', methods=['GET'])
 @app.route('/api/graphs', methods=['GET'])

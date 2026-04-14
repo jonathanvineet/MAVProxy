@@ -188,6 +188,83 @@ def evaluate_graph_on_file(graph_def, path, decimate=1):
         return result
 
 
+def extract_timeseries_cache(path, max_points_per_field=10000):
+    """Extract timeseries data for all message/field combinations and cache them.
+    
+    This creates a cache that can be stored in MongoDB so timeseries requests
+    don't need the original file on serverless deployments.
+    
+    Args:
+        path: Path to the log file
+        max_points_per_field: Maximum points to cache per field (to avoid huge data)
+    
+    Returns:
+        Dictionary with 'msg_field' keys mapping to series data
+    """
+    cache = {}
+    try:
+        mlog = mavutil.mavlink_connection(path)
+        
+        # First pass: collect all message types and fields
+        all_msg_fields = {}
+        mlog.rewind()
+        while True:
+            m = mlog.recv_match()
+            if m is None:
+                break
+            msg_type = m.get_type()
+            if msg_type not in all_msg_fields:
+                all_msg_fields[msg_type] = set()
+            all_msg_fields[msg_type].update(k for k in m.to_dict().keys() if k != '_time')
+        
+        # Second pass: extract timeseries for each message/field
+        for msg_type in sorted(all_msg_fields.keys()):
+            for field in sorted(all_msg_fields[msg_type]):
+                # Only cache numeric fields
+                mlog.rewind()
+                series = []
+                idx = 0
+                max_idx = max_points_per_field * 10  # Decimate aggressively
+                
+                while True:
+                    m = mlog.recv_match(type=msg_type)
+                    if m is None:
+                        break
+                    
+                    try:
+                        # Get timestamp
+                        t = getattr(m, 'time_usec', None) or getattr(m, 'time', None) or getattr(m, '_timestamp', None)
+                        if t is not None and t > 1e12:
+                            t = t / 1e6
+                        
+                        # Get field value
+                        v = m.to_dict().get(field)
+                        if v is None:
+                            v = getattr(m, field, None)
+                        
+                        # Only cache numeric values
+                        if isinstance(v, (int, float)) and t is not None:
+                            # Decimate to avoid huge caches
+                            if idx % 10 == 0 and len(series) < max_points_per_field:
+                                series.append({'t': t, 'v': float(v)})
+                        
+                        idx += 1
+                        if idx > max_idx:  # Safety limit
+                            break
+                    except:
+                        continue
+                
+                # Only cache if we have data
+                if series:
+                    cache_key = f"{msg_type}_{field}"
+                    cache[cache_key] = series
+        
+        return cache
+    except Exception as e:
+        print(f"Error extracting timeseries cache: {e}")
+        return {}
+
+
 def create_upload(path):
     """Create an upload entry (token) referencing an analysis directory."""
     token = str(uuid.uuid4())
