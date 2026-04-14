@@ -299,6 +299,7 @@ export default function ComparisonView({ allProfiles }) {
       }
     })
     const labels = Array.from(allTimestamps).sort((a, b) => a - b)
+    const minTime = labels.length > 0 ? labels[0] : 0
 
     const datasets = []
     let colorIdx = 0
@@ -315,7 +316,7 @@ export default function ComparisonView({ allProfiles }) {
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
           label: field,
-          data: values,
+          data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
           borderColor: color,
           backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
           borderWidth: 2,
@@ -340,7 +341,7 @@ export default function ComparisonView({ allProfiles }) {
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
             label: `${field}.${sub}`,
-            data: values,
+            data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
             borderColor: color,
             backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
             borderWidth: 2,
@@ -353,7 +354,7 @@ export default function ComparisonView({ allProfiles }) {
       }
     })
 
-    const chartData = { labels, datasets }
+    const chartData = { datasets }
 
     // Build flight mode annotations if available
     const annotations = {}
@@ -362,8 +363,8 @@ export default function ComparisonView({ allProfiles }) {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
         annotations[`mode-${idx}`] = {
           type: 'box',
-          xMin: fm.start,
-          xMax: fm.end,
+          xMin: fm.start - minTime,
+          xMax: fm.end - minTime,
           yMin: 'min',
           yMax: 'max',
           backgroundColor: color,
@@ -387,12 +388,8 @@ export default function ComparisonView({ allProfiles }) {
           borderColor: '#ddd',
           borderWidth: 1,
           callbacks: {
-            filter: function (tooltipItem) {
-              return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
-            },
             title: function (context) {
-              const index = context[0].dataIndex
-              const time = labels[index]
+              const time = context[0].parsed.x
               return `Time: ${Number(time).toFixed(2)}s`
             }
           }
@@ -416,7 +413,7 @@ export default function ComparisonView({ allProfiles }) {
           grid: { color: 'rgba(0,0,0,0.1)' }
         }
       },
-      interaction: { mode: 'index', intersect: false }
+      interaction: { mode: 'nearest', intersect: false }
     }
 
     return <Line
@@ -737,6 +734,7 @@ export default function ComparisonView({ allProfiles }) {
           >
             {(() => {
               const labels = extrapolatedPanel.allTimestamps
+              const minTime = labels.length > 0 ? labels[0] : 0
               const datasets = []
 
               Object.keys(extrapolatedPanel.combinedData).forEach((key) => {
@@ -749,7 +747,7 @@ export default function ComparisonView({ allProfiles }) {
                 const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
                 datasets.push({
                   label: key,
-                  data: values,
+                  data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
                   borderColor: color,
                   backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
                   borderWidth: 2,
@@ -760,7 +758,7 @@ export default function ComparisonView({ allProfiles }) {
                 })
               })
 
-              const chartData = { labels, datasets }
+              const chartData = { datasets }
 
               // Build flight mode annotations
               const annotations = {}
@@ -769,8 +767,8 @@ export default function ComparisonView({ allProfiles }) {
                   const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
                   annotations[`mode-${idx}`] = {
                     type: 'box',
-                    xMin: fm.start,
-                    xMax: fm.end,
+                    xMin: fm.start - minTime,
+                    xMax: fm.end - minTime,
                     yMin: 'min',
                     yMax: 'max',
                     backgroundColor: color,
@@ -798,12 +796,8 @@ export default function ComparisonView({ allProfiles }) {
                     borderColor: '#ddd',
                     borderWidth: 1,
                     callbacks: {
-                      filter: function (tooltipItem) {
-                        return tooltipItem.parsed && tooltipItem.parsed.y !== null && tooltipItem.parsed.y !== undefined
-                      },
                       title: function (context) {
-                        const index = context[0].dataIndex
-                        const time = labels[index]
+                        const time = context[0].parsed.x
                         return `Time: ${Number(time).toFixed(2)}s`
                       }
                     }
@@ -827,7 +821,7 @@ export default function ComparisonView({ allProfiles }) {
                     grid: { color: 'rgba(0,0,0,0.1)' }
                   }
                 },
-                interaction: { mode: 'index', intersect: false }
+                interaction: { mode: 'nearest', intersect: false }
               }
 
               return <Line
