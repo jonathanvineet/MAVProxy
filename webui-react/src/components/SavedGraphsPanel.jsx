@@ -242,7 +242,6 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     })
 
     const chartData = { labels, datasets }
-    minTime = labels[0]
     const maxTime = labels[labels.length - 1]
     let xMin, xMax, yMin, yMax
     if (xInterval && minTime && maxTime) {
