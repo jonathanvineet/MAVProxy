@@ -279,6 +279,15 @@ export default function ComparisonView({ allProfiles }) {
       return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
     }
 
+    console.log(`\n\n========== COMPARISONVIEW DEBUG DUMP [Panel: ${panel.fileName}] ==========`)
+    console.log('=== 1. RAW DATA SAMPLE ===')
+    Object.keys(panel.graphData).slice(0, 3).forEach(field => {
+      const series = panel.graphData[field]
+      if (Array.isArray(series)) {
+        console.log(`Dataset: ${field}`, series.slice(0, 5))
+      }
+    })
+
     // Detect time scale automatically
     const detectTimeScale = (timestamps) => {
       if (!timestamps || timestamps.length < 2) return 1
@@ -315,10 +324,25 @@ export default function ComparisonView({ allProfiles }) {
       }
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+    
+    console.log('=== 2. NORMALIZATION INPUT ===')
+    console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
+    
     const timeScale = detectTimeScale(absoluteTimestamps)
     const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
     const minTimeAbsolute = absoluteTimestamps.length > 0 ? normalizedTimestamps[0] : 0
     const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
+
+    console.log('=== 3. TIME SCALE DETECTION ===')
+    console.log('timeScale:', timeScale)
+
+    console.log('=== 4. NORMALIZED VALUES ===')
+    console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
+
+    console.log('=== 5. RELATIVE TIME ===')
+    console.log('minTimeAbsolute:', minTimeAbsolute)
+    console.log('labels (first 10):', labels.slice(0, 10))
+    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
 
     const normalizeData = (data) => {
       if (Array.isArray(data)) return data;
@@ -350,7 +374,7 @@ export default function ComparisonView({ allProfiles }) {
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
           label: field,
-          data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
+          data: values.map((v, i) => ({ x: labels[i], y: v })),
           borderColor: color,
           backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
           borderWidth: 2,
@@ -378,7 +402,7 @@ export default function ComparisonView({ allProfiles }) {
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
             label: `${field}.${sub}`,
-            data: values.map((v, i) => ({ x: labels[i] - minTime, y: v })),
+            data: values.map((v, i) => ({ x: labels[i], y: v })),
             borderColor: color,
             backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
             borderWidth: 2,
@@ -392,6 +416,33 @@ export default function ComparisonView({ allProfiles }) {
     })
 
     const chartData = { datasets }
+
+    console.log('=== 6. DATAMAP KEYS ===')
+    datasets.slice(0, 5).forEach((ds) => {
+      const validValues = ds.data.filter(d => d.y !== null).length
+      console.log(`${ds.label}: ${validValues} valid values out of ${ds.data.length}`)
+    })
+
+    console.log('=== 7. FLIGHT MODES ===')
+    console.log('No flight modes in comparison view')
+
+    console.log('=== 8. FINAL CHART INPUT ===')
+    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+    console.log('datasets count:', datasets.length)
+
+    const allXValues = labels
+
+    console.log('=== 9. SANITY CHECK ===')
+    console.log('MIN X (all values):', Math.min(...allXValues))
+    console.log('MAX X (all values):', Math.max(...allXValues))
+
+    if (Math.max(...allXValues) > 100000) {
+      console.error('🚨 INVALID TIME DETECTED (>100,000s) - Mixed units detected!')
+    }
+    if (Math.min(...allXValues) < -1000) {
+      console.error('🚨 NEGATIVE TIME DETECTED - Timeline issue!')
+    }
+    console.log('✅ Time pipeline validated\n\n')
 
     // Build flight mode annotations if available
     const annotations = {}

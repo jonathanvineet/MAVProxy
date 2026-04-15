@@ -304,6 +304,15 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     return 1
   }
 
+  console.log('\n\n========== GRAPHVIEW DEBUG DUMP ==========')
+  console.log('=== 1. RAW DATA SAMPLE ===')
+  Object.keys(seriesData).slice(0, 3).forEach(field => {
+    const series = seriesData[field]
+    if (Array.isArray(series)) {
+      console.log(`Dataset: ${field}`, series.slice(0, 5))
+    }
+  })
+
   // Collect all unique timestamps across all series
   const allTimestamps = new Set()
   Object.values(seriesData).forEach(series => {
@@ -322,11 +331,25 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>No data available for this selection</div>
   }
   
+  console.log('=== 2. NORMALIZATION INPUT ===')
+  console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
+  
   // Detect time scale and convert to RELATIVE time
   const timeScale = detectTimeScale(absoluteTimestamps)
   const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
   const minTimeAbsolute = normalizedTimestamps[0]
   const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
+
+  console.log('=== 3. TIME SCALE DETECTION ===')
+  console.log('timeScale:', timeScale)
+
+  console.log('=== 4. NORMALIZED VALUES ===')
+  console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
+
+  console.log('=== 5. RELATIVE TIME ===')
+  console.log('minTimeAbsolute:', minTimeAbsolute)
+  console.log('labels (first 10):', labels.slice(0, 10))
+  console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData)
@@ -348,6 +371,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
           }
         })
       }
+
+      console.log(`Dataset ${field}: ${Object.keys(dataMap).length} points`)
 
       // Map labels to values (null if not present) - use normalized timestamps for lookup
       const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
@@ -374,13 +399,30 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
   // Build flight mode annotations as background regions
   const annotations = {}
   if (showFlightModes && flightModes.length > 0) {
+    console.log('=== 6. DATAMAP KEYS ===')
+    datasets.slice(0, 5).forEach((ds) => {
+      const validValues = ds.data.filter(v => v !== null).length
+      console.log(`${ds.label}: ${validValues} valid values out of ${ds.data.length}`)
+    })
+
+    console.log('=== 7. FLIGHT MODES ===')
     flightModes.forEach((fm, idx) => {
       const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
+      const relStart = (fm.start / timeScale) - minTimeAbsolute
+      const relEnd = (fm.end / timeScale) - minTimeAbsolute
+      console.log(`FM ${idx} (${fm.mode}):`, {
+        rawStart: fm.start,
+        rawEnd: fm.end,
+        normalizedStart: (fm.start / timeScale),
+        normalizedEnd: (fm.end / timeScale),
+        relativeStart: relStart,
+        relativeEnd: relEnd
+      })
 
       annotations[`mode-${idx}`] = {
         type: 'box',
-        xMin: (fm.start / timeScale) - minTimeAbsolute,  // Convert to relative time
-        xMax: (fm.end / timeScale) - minTimeAbsolute,    // Convert to relative time
+        xMin: relStart,
+        xMax: relEnd,
         yMin: 'min',
         yMax: 'max',
         backgroundColor: color,
@@ -394,6 +436,31 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     labels,
     datasets
   }
+
+  console.log('=== 8. FINAL CHART INPUT ===')
+  console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+  console.log('datasets count:', datasets.length)
+  console.log('flight modes count:', Object.keys(annotations).length)
+
+  const allXValues = [
+    ...labels,
+    ...Object.keys(annotations).flatMap(key => {
+      const ann = annotations[key]
+      return [ann.xMin, ann.xMax].filter(v => typeof v === 'number')
+    })
+  ]
+
+  console.log('=== 9. SANITY CHECK ===')
+  console.log('MIN X (all values):', Math.min(...allXValues))
+  console.log('MAX X (all values):', Math.max(...allXValues))
+
+  if (Math.max(...allXValues) > 100000) {
+    console.error('🚨 INVALID TIME DETECTED (>100,000s) - Mixed units detected!')
+  }
+  if (Math.min(...allXValues) < -1000) {
+    console.error('🚨 NEGATIVE TIME DETECTED - Timeline issue!')
+  }
+  console.log('✅ Time pipeline validated\n\n')
 
   // Calculate zoom limits based on intervals
   let xMin = undefined

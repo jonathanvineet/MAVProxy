@@ -201,6 +201,15 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       }
     }
 
+    console.log('\n\n========== SAVEDGRAPHSPANEL DEBUG DUMP ==========')
+    console.log('=== 1. RAW DATA SAMPLE ===')
+    Object.keys(data).slice(0, 3).forEach(field => {
+      const series = data[field]
+      if (Array.isArray(series)) {
+        console.log(`Dataset: ${field}`, series.slice(0, 5))
+      }
+    })
+
     const allTimestamps = new Set()
     Object.values(data).forEach(series => {
       if (Array.isArray(series)) {
@@ -221,6 +230,10 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       }
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+    
+    console.log('=== 2. NORMALIZATION INPUT ===')
+    console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
+    
     // Detect time scale (seconds, centiseconds, milliseconds, or microseconds)
     const timeScale = detectTimeScale(absoluteTimestamps)
     
@@ -231,12 +244,16 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     // Step 2: Convert to RELATIVE time (0-based from start)
     const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
     
-    console.log('[SavedGraphs] Time scale detected:', timeScale, '(divide timestamps by this to get seconds)')
-    console.log('[SavedGraphs] Sample timestamps (raw):', absoluteTimestamps.slice(0, 5))
-    console.log('[SavedGraphs] Sample timestamps (normalized to seconds):', normalizedTimestamps.slice(0, 5))
-    console.log('[SavedGraphs] Sample timestamps (RELATIVE from start):', labels.slice(0, 5))
-    console.log('[SavedGraphs] Min time (absolute seconds):', minTimeAbsolute)
-    console.log('[SavedGraphs] Max time (relative seconds):', labels[labels.length - 1])
+    console.log('=== 3. TIME SCALE DETECTION ===')
+    console.log('timeScale:', timeScale)
+    
+    console.log('=== 4. NORMALIZED VALUES ===')
+    console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
+    
+    console.log('=== 5. RELATIVE TIME ===')
+    console.log('minTimeAbsolute:', minTimeAbsolute)
+    console.log('labels (first 10):', labels.slice(0, 10))
+    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
 
     const datasets = []
     let colorIdx = 0
@@ -301,6 +318,15 @@ export default function SavedGraphsPanel({ selectedProfile }) {
 
     const chartData = { labels, datasets }
     const maxTime = labels[labels.length - 1]
+    
+    // Debug: Log all dataMap keys and values
+    console.log('=== 6. DATAMAP KEYS ===')
+    datasets.forEach((ds, idx) => {
+      if (ds.data && ds.data.length > 0) {
+        const validValues = ds.data.filter(v => v !== null).length
+        console.log(`Dataset ${idx} (${ds.label}): ${validValues} valid values out of ${ds.data.length}`)
+      }
+    })
     let xMin, xMax, yMin, yMax
     if (xInterval && maxTime) {
       const center = maxTime / 2
@@ -312,11 +338,20 @@ export default function SavedGraphsPanel({ selectedProfile }) {
 
     const annotations = {}
     if (flightModes && flightModes.length > 0) {
+      console.log('=== 7. FLIGHT MODES ===')
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
         // Convert to relative time: (raw / timeScale) - minTimeAbsolute
         const fmStart = (fm.start / timeScale) - minTimeAbsolute
         const fmEnd = (fm.end / timeScale) - minTimeAbsolute
+        console.log(`FM ${idx} (${fm.mode}):`, {
+          rawStart: fm.start,
+          rawEnd: fm.end,
+          normalizedStart: (fm.start / timeScale),
+          normalizedEnd: (fm.end / timeScale),
+          relativeStart: fmStart,
+          relativeEnd: fmEnd
+        })
         console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): relative range ${fmStart.toFixed(2)}s - ${fmEnd.toFixed(2)}s`)
         annotations[`mode-${idx}`] = {
           type: 'box',
@@ -330,7 +365,31 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         }
       })
     }
+    // Final sanity check
+    console.log('=== 8. FINAL CHART INPUT ===')
+    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+    console.log('datasets count:', datasets.length)
+    console.log('flight modes count:', Object.keys(annotations).length)
 
+    const allXValues = [
+      ...labels,
+      ...Object.keys(annotations).flatMap(key => {
+        const ann = annotations[key]
+        return [ann.xMin, ann.xMax].filter(v => typeof v === 'number')
+      })
+    ]
+
+    console.log('=== 9. SANITY CHECK ===')
+    console.log('MIN X (all values):', Math.min(...allXValues))
+    console.log('MAX X (all values):', Math.max(...allXValues))
+
+    if (Math.max(...allXValues) > 100000) {
+      console.error('🚨 INVALID TIME DETECTED (>100,000s) - Mixed units detected!')
+    }
+    if (Math.min(...allXValues) < -1000) {
+      console.error('🚨 NEGATIVE TIME DETECTED - Timeline issue!')
+    }
+    console.log('✅ Time pipeline validated\n\n')
     const chartOptions = {
       responsive: true,
       maintainAspectRatio: false,
