@@ -184,9 +184,12 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       }
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
-    // Convert to relative time starting from 0
+    // Keep absolute timestamps for accurate lookups
     const minTime = absoluteTimestamps[0]
-    const labels = absoluteTimestamps.map(t => (t - minTime))
+    const labels = absoluteTimestamps.map(t => t) // absolute timestamps
+    console.log('[SavedGraphs] Sample timestamps:', absoluteTimestamps.slice(0, 3))
+    console.log('[SavedGraphs] Min time:', minTime)
+    console.log('[SavedGraphs] First label (absolute):', labels[0])
 
     const datasets = []
     let colorIdx = 0
@@ -250,14 +253,16 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       xMax = Math.min(maxTime, center + xInterval / 2)
     }
     if (yInterval) { yMin = -yInterval; yMax = yInterval }
+    console.log('[SavedGraphs] X-axis range:', { xMin, xMax, minTime, maxTime, displayMin: xMin ? (xMin - minTime).toFixed(2) : 'auto', displayMax: xMax ? (xMax - minTime).toFixed(2) : 'auto' })
 
     const annotations = {}
     if (flightModes && flightModes.length > 0) {
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        // Convert flight mode times to relative time (same as chart x-axis)
-        const fmStart = fm.start - minTime
-        const fmEnd = fm.end - minTime
+        // Use absolute timestamps (labels are absolute, so annotations must match)
+        const fmStart = fm.start
+        const fmEnd = fm.end
+        console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): absolute range ${fmStart} - ${fmEnd}, relative ${(fmStart - minTime).toFixed(2)}s - ${(fmEnd - minTime).toFixed(2)}s`)
         annotations[`mode-${idx}`] = {
           type: 'box',
           xMin: fmStart,
@@ -294,8 +299,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
             },
             title: function (context) {
               const index = context[0].dataIndex
-              const time = labels[index]
-              return `Time: ${Number(time).toFixed(2)}s`
+              const absoluteTime = labels[index]
+              const relativeTime = absoluteTime - minTime
+              return `Time: ${Number(relativeTime).toFixed(2)}s (absolute: ${Number(absoluteTime).toFixed(2)})`
             }
           }
         }
@@ -307,7 +313,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
             color: '#1a1a1a',
             maxTicksLimit: 12,
             callback: function (value) {
-              return Number(value).toFixed(2) + 's'
+              // Convert absolute timestamp to relative time for display
+              const relativeTime = value - minTime
+              return Number(relativeTime).toFixed(2) + 's'
             }
           },
           grid: { color: 'rgba(0,0,0,0.1)' },
