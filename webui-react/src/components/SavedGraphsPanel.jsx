@@ -164,6 +164,43 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
     }
 
+    // Detect time scale automatically from timestamp differences
+    // Different MAVLink message types use different units: seconds, centiseconds (×100), or microseconds
+    const detectTimeScale = (timestamps) => {
+      if (!timestamps || timestamps.length < 2) return 1
+      
+      // Look at first few differences to detect pattern
+      const diffs = []
+      for (let i = 1; i < Math.min(5, timestamps.length); i++) {
+        const diff = Math.abs(timestamps[i] - timestamps[i-1])
+        if (diff > 0) diffs.push(diff)
+      }
+      
+      if (diffs.length === 0) return 1
+      
+      // Get median difference
+      const medianDiff = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)]
+      
+      console.log('[SavedGraphs] Time differences:', diffs, 'median:', medianDiff)
+      
+      // Heuristic: if median diff > 10, likely centiseconds (0.1s intervals show as ~10)
+      // If > 1000, likely milliseconds
+      // If > 1000000, likely microseconds
+      if (medianDiff > 100000) {
+        console.log('[SavedGraphs] Detected: microseconds (÷1000000)')
+        return 1000000
+      } else if (medianDiff > 1000) {
+        console.log('[SavedGraphs] Detected: milliseconds (÷1000)')
+        return 1000
+      } else if (medianDiff > 10) {
+        console.log('[SavedGraphs] Detected: centiseconds (÷100)')
+        return 100
+      } else {
+        console.log('[SavedGraphs] Detected: seconds (÷1)')
+        return 1
+      }
+    }
+
     const allTimestamps = new Set()
     Object.values(data).forEach(series => {
       if (Array.isArray(series)) {
@@ -184,12 +221,17 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       }
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
-    // Keep absolute timestamps for accurate lookups
-    const minTime = absoluteTimestamps[0]
-    const labels = absoluteTimestamps.map(t => t) // absolute timestamps
-    console.log('[SavedGraphs] Sample timestamps:', absoluteTimestamps.slice(0, 3))
-    console.log('[SavedGraphs] Min time:', minTime)
-    console.log('[SavedGraphs] First label (absolute):', labels[0])
+    // Detect time scale (seconds, centiseconds, milliseconds, or microseconds)
+    const timeScale = detectTimeScale(absoluteTimestamps)
+    
+    // Normalize to seconds
+    const minTime = absoluteTimestamps[0] / timeScale
+    const labels = absoluteTimestamps.map(t => t / timeScale) // normalize to seconds
+    console.log('[SavedGraphs] Time scale detected:', timeScale, '(divide timestamps by this to get seconds)')
+    console.log('[SavedGraphs] Sample timestamps (raw):', absoluteTimestamps.slice(0, 5))
+    console.log('[SavedGraphs] Sample timestamps (normalized):', labels.slice(0, 5))
+    console.log('[SavedGraphs] Min time (seconds):', minTime)
+    console.log('[SavedGraphs] Max time (seconds):', labels[labels.length - 1])
 
     const datasets = []
     let colorIdx = 0
@@ -201,7 +243,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         const dataMap = {}
         series.forEach(p => {
           const norm = normalizePoint(p)
-          if (norm) dataMap[norm.t] = norm.v
+          if (norm) dataMap[norm.t / timeScale] = norm.v  // normalize key to seconds
         })
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
@@ -226,7 +268,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
           const dataMap = {}
           arr.forEach(p => {
             const norm = normalizePoint(p)
-            if (norm) dataMap[norm.t] = norm.v
+            if (norm) dataMap[norm.t / timeScale] = norm.v  // normalize key to seconds
           })
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
@@ -259,10 +301,10 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     if (flightModes && flightModes.length > 0) {
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        // Use absolute timestamps (labels are absolute, so annotations must match)
-        const fmStart = fm.start
-        const fmEnd = fm.end
-        console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): absolute range ${fmStart} - ${fmEnd}, relative ${(fmStart - minTime).toFixed(2)}s - ${(fmEnd - minTime).toFixed(2)}s`)
+        // Normalize flight mode times using same timeScale as data
+        const fmStart = fm.start / timeScale
+        const fmEnd = fm.end / timeScale
+        console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): normalized range ${fmStart.toFixed(2)}s - ${fmEnd.toFixed(2)}s`)
         annotations[`mode-${idx}`] = {
           type: 'box',
           xMin: fmStart,
@@ -299,9 +341,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
             },
             title: function (context) {
               const index = context[0].dataIndex
-              const absoluteTime = labels[index]
-              const relativeTime = absoluteTime - minTime
-              return `Time: ${Number(relativeTime).toFixed(2)}s (absolute: ${Number(absoluteTime).toFixed(2)})`
+              const displayTime = labels[index]
+              return `Time: ${Number(displayTime).toFixed(2)}s`
             }
           }
         }
@@ -313,9 +354,9 @@ export default function SavedGraphsPanel({ selectedProfile }) {
             color: '#1a1a1a',
             maxTicksLimit: 12,
             callback: function (value) {
-              // Convert absolute timestamp to relative time for display
-              const relativeTime = value - minTime
-              return Number(relativeTime).toFixed(2) + 's'
+              // Labels are already normalized to seconds, just display with offset
+              const displayTime = value - minTime
+              return Number(displayTime).toFixed(2) + 's'
             }
           },
           grid: { color: 'rgba(0,0,0,0.1)' },
