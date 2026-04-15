@@ -5,6 +5,7 @@ import annotationPlugin from 'chartjs-plugin-annotation'
 import zoomPlugin from 'chartjs-plugin-zoom'
 Chart.register(...registerables, annotationPlugin, zoomPlugin)
 import api from '../api'
+import TimeNormalizer from '../utils/TimeNormalizer'
 import GraphAIChat from './GraphAIChat'
 
 // Flight mode colors matching desktop MAVExplorer - solid colors for regions
@@ -334,22 +335,31 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
   console.log('=== 2. NORMALIZATION INPUT ===')
   console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
   
-  // Detect time scale and convert to RELATIVE time
-  const timeScale = detectTimeScale(absoluteTimestamps)
-  const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
-  const minTimeAbsolute = normalizedTimestamps[0]
-  const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
+  // Use TimeNormalizer for ALL timestamp handling
+  const normalizer = new TimeNormalizer(absoluteTimestamps, 'GraphView')
+  
+  // CRITICAL: Detect if timestamps are pre-scaled (GraphView data bug)
+  const isPreScaled = normalizer.detectPreScaled()
+  if (isPreScaled) {
+    console.error('🚨 GraphView data is pre-scaled! This will cause mismatch with flight modes.')
+  }
+  
+  // Get relative time labels (0-based from start)
+  const labels = normalizer.toRelativeArray(absoluteTimestamps)
 
   console.log('=== 3. TIME SCALE DETECTION ===')
-  console.log('timeScale:', timeScale)
+  console.log('Detected unit:', normalizer.unit)
+  console.log('Scale factor:', normalizer.scale)
+  console.log('Pre-scaled detected:', isPreScaled)
 
   console.log('=== 4. NORMALIZED VALUES ===')
-  console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
+  console.log('normalizedTimestamps (first 10):', absoluteTimestamps.map(t => normalizer.toAbsolute(t)).slice(0, 10))
 
   console.log('=== 5. RELATIVE TIME ===')
-  console.log('minTimeAbsolute:', minTimeAbsolute)
+  console.log('minTimeAbsolute:', normalizer.absMin)
   console.log('labels (first 10):', labels.slice(0, 10))
-  console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+  const range = normalizer.getRelativeRange()
+  console.log('labels range:', range.min, 'to', range.max)
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData)
@@ -358,15 +368,15 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
       const series = seriesData[field]
       const color = SERIES_COLORS[idx % SERIES_COLORS.length]
 
-      // Create a map of normalized timestamp to value
+      // Create a map of relative timestamp to value
       const dataMap = {}
       if (Array.isArray(series)) {
         series.forEach(p => {
           const t = p.t ?? p.x
           const v = p.v ?? p.y
           if (t !== undefined && v !== undefined) {
-            // Convert to relative time: (raw / timeScale) - minTimeAbsolute
-            const relativeTime = (Number(t) / timeScale) - minTimeAbsolute
+            // Use normalizer to convert raw timestamp to relative time
+            const relativeTime = normalizer.toRelative(Number(t))
             dataMap[relativeTime] = Number(v)
           }
         })
@@ -374,7 +384,7 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
 
       console.log(`Dataset ${field}: ${Object.keys(dataMap).length} points`)
 
-      // Map labels to values (null if not present) - use normalized timestamps for lookup
+      // Map labels to values (null if not present)
       const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
 
       // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
@@ -408,13 +418,14 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     console.log('=== 7. FLIGHT MODES ===')
     flightModes.forEach((fm, idx) => {
       const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-      const relStart = (fm.start / timeScale) - minTimeAbsolute
-      const relEnd = (fm.end / timeScale) - minTimeAbsolute
+      // Use normalizer for flight modes too (CRITICAL: both data and flight modes use same scale)
+      const relStart = normalizer.toRelative(fm.start)
+      const relEnd = normalizer.toRelative(fm.end)
       console.log(`FM ${idx} (${fm.mode}):`, {
         rawStart: fm.start,
         rawEnd: fm.end,
-        normalizedStart: (fm.start / timeScale),
-        normalizedEnd: (fm.end / timeScale),
+        normalizedStart: normalizer.toAbsolute(fm.start),
+        normalizedEnd: normalizer.toAbsolute(fm.end),
         relativeStart: relStart,
         relativeEnd: relEnd
       })

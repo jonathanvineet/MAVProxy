@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { Line } from 'react-chartjs-2'
 import api from '../api'
+import TimeNormalizer from '../utils/TimeNormalizer'
 
 export default function SavedGraphsPanel({ selectedProfile }) {
   const [savedGraphs, setSavedGraphs] = useState([])
@@ -164,52 +165,7 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
     }
 
-    // Detect time scale automatically from timestamp differences
-    // Different MAVLink message types use different units: seconds, centiseconds (×100), or microseconds
-    const detectTimeScale = (timestamps) => {
-      if (!timestamps || timestamps.length < 2) return 1
-      
-      // Look at first few differences to detect pattern
-      const diffs = []
-      for (let i = 1; i < Math.min(5, timestamps.length); i++) {
-        const diff = Math.abs(timestamps[i] - timestamps[i-1])
-        if (diff > 0) diffs.push(diff)
-      }
-      
-      if (diffs.length === 0) return 1
-      
-      // Get median difference
-      const medianDiff = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)]
-      
-      console.log('[SavedGraphs] Time differences:', diffs, 'median:', medianDiff)
-      
-      // Heuristic: if median diff > 10, likely centiseconds (0.1s intervals show as ~10)
-      // If > 1000, likely milliseconds
-      // If > 1000000, likely microseconds
-      if (medianDiff > 100000) {
-        console.log('[SavedGraphs] Detected: microseconds (÷1000000)')
-        return 1000000
-      } else if (medianDiff > 1000) {
-        console.log('[SavedGraphs] Detected: milliseconds (÷1000)')
-        return 1000
-      } else if (medianDiff > 10) {
-        console.log('[SavedGraphs] Detected: centiseconds (÷100)')
-        return 100
-      } else {
-        console.log('[SavedGraphs] Detected: seconds (÷1)')
-        return 1
-      }
-    }
-
-    console.log('\n\n========== SAVEDGRAPHSPANEL DEBUG DUMP ==========')
-    console.log('=== 1. RAW DATA SAMPLE ===')
-    Object.keys(data).slice(0, 3).forEach(field => {
-      const series = data[field]
-      if (Array.isArray(series)) {
-        console.log(`Dataset: ${field}`, series.slice(0, 5))
-      }
-    })
-
+    // Collect all raw timestamps
     const allTimestamps = new Set()
     Object.values(data).forEach(series => {
       if (Array.isArray(series)) {
@@ -231,29 +187,32 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
     
+    // Use TimeNormalizer for ALL timestamp handling
+    const normalizer = new TimeNormalizer(absoluteTimestamps, 'SavedGraphsPanel')
+    
+    // Get relative time labels (0-based from start)
+    const labels = normalizer.toRelativeArray(absoluteTimestamps)
+    
+    console.log('\n========== SAVEDGRAPHSPANEL DEBUG ==========')
+    console.log('=== 1. RAW DATA SAMPLE ===')
+    Object.keys(data).slice(0, 3).forEach(field => {
+      const series = data[field]
+      if (Array.isArray(series)) {
+        console.log(`Dataset: ${field}`, series.slice(0, 5))
+      }
+    })
     console.log('=== 2. NORMALIZATION INPUT ===')
     console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
-    
-    // Detect time scale (seconds, centiseconds, milliseconds, or microseconds)
-    const timeScale = detectTimeScale(absoluteTimestamps)
-    
-    // Step 1: Normalize to seconds
-    const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
-    const minTimeAbsolute = normalizedTimestamps[0]
-    
-    // Step 2: Convert to RELATIVE time (0-based from start)
-    const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
-    
     console.log('=== 3. TIME SCALE DETECTION ===')
-    console.log('timeScale:', timeScale)
-    
+    console.log('Detected unit:', normalizer.unit)
+    console.log('Scale factor:', normalizer.scale)
     console.log('=== 4. NORMALIZED VALUES ===')
-    console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
-    
+    console.log('normalizedTimestamps (first 10):', absoluteTimestamps.map(t => normalizer.toAbsolute(t)).slice(0, 10))
     console.log('=== 5. RELATIVE TIME ===')
-    console.log('minTimeAbsolute:', minTimeAbsolute)
+    console.log('minTimeAbsolute:', normalizer.absMin)
     console.log('labels (first 10):', labels.slice(0, 10))
-    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+    const range = normalizer.getRelativeRange()
+    console.log('labels range:', range.min, 'to', range.max)
 
     const datasets = []
     let colorIdx = 0
@@ -266,8 +225,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         series.forEach(p => {
           const norm = normalizePoint(p)
           if (norm) {
-            // Convert to relative time: (raw / timeScale) - minTimeAbsolute
-            const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+            // Use normalizer to convert raw timestamp to relative time
+            const relativeTime = normalizer.toRelative(norm.t)
             dataMap[relativeTime] = norm.v
           }
         })
@@ -295,8 +254,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
           arr.forEach(p => {
             const norm = normalizePoint(p)
             if (norm) {
-              // Convert to relative time: (raw / timeScale) - minTimeAbsolute
-              const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+              // Use normalizer to convert raw timestamp to relative time
+              const relativeTime = normalizer.toRelative(norm.t)
               dataMap[relativeTime] = norm.v
             }
           })
@@ -341,14 +300,14 @@ export default function SavedGraphsPanel({ selectedProfile }) {
       console.log('=== 7. FLIGHT MODES ===')
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        // Convert to relative time: (raw / timeScale) - minTimeAbsolute
-        const fmStart = (fm.start / timeScale) - minTimeAbsolute
-        const fmEnd = (fm.end / timeScale) - minTimeAbsolute
+        // Use normalizer for flight modes too (CRITICAL: both data and flight modes use same scale)
+        const fmStart = normalizer.toRelative(fm.start)
+        const fmEnd = normalizer.toRelative(fm.end)
         console.log(`FM ${idx} (${fm.mode}):`, {
           rawStart: fm.start,
           rawEnd: fm.end,
-          normalizedStart: (fm.start / timeScale),
-          normalizedEnd: (fm.end / timeScale),
+          normalizedStart: normalizer.toAbsolute(fm.start),
+          normalizedEnd: normalizer.toAbsolute(fm.end),
           relativeStart: fmStart,
           relativeEnd: fmEnd
         })

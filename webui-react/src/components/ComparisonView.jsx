@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Line } from 'react-chartjs-2'
 import api from '../api'
+import TimeNormalizer from '../utils/TimeNormalizer'
 import GraphAIChat from './GraphAIChat'
 import html2canvas from 'html2canvas'
 
@@ -288,22 +289,6 @@ export default function ComparisonView({ allProfiles }) {
       }
     })
 
-    // Detect time scale automatically
-    const detectTimeScale = (timestamps) => {
-      if (!timestamps || timestamps.length < 2) return 1
-      const diffs = []
-      for (let i = 1; i < Math.min(5, timestamps.length); i++) {
-        const diff = Math.abs(timestamps[i] - timestamps[i-1])
-        if (diff > 0) diffs.push(diff)
-      }
-      if (diffs.length === 0) return 1
-      const medianDiff = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)]
-      if (medianDiff > 100000) return 1000000
-      if (medianDiff > 1000) return 1000
-      if (medianDiff > 10) return 100
-      return 1
-    }
-
     const allTimestamps = new Set()
     Object.values(panel.graphData).forEach(series => {
       if (Array.isArray(series)) {
@@ -328,21 +313,31 @@ export default function ComparisonView({ allProfiles }) {
     console.log('=== 2. NORMALIZATION INPUT ===')
     console.log('absoluteTimestamps (first 10):', absoluteTimestamps.slice(0, 10))
     
-    const timeScale = detectTimeScale(absoluteTimestamps)
-    const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
-    const minTimeAbsolute = absoluteTimestamps.length > 0 ? normalizedTimestamps[0] : 0
-    const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
+    // Use TimeNormalizer for ALL timestamp handling
+    const normalizer = new TimeNormalizer(absoluteTimestamps, `ComparisonView[${panel.fileName}]`)
+    
+    // CRITICAL: Detect if timestamps are pre-scaled
+    const isPreScaled = normalizer.detectPreScaled()
+    if (isPreScaled) {
+      console.error('🚨 ComparisonView data is pre-scaled! Check data source.')
+    }
+    
+    // Get relative time labels (0-based from start)
+    const labels = normalizer.toRelativeArray(absoluteTimestamps)
 
     console.log('=== 3. TIME SCALE DETECTION ===')
-    console.log('timeScale:', timeScale)
+    console.log('Detected unit:', normalizer.unit)
+    console.log('Scale factor:', normalizer.scale)
+    console.log('Pre-scaled detected:', isPreScaled)
 
     console.log('=== 4. NORMALIZED VALUES ===')
-    console.log('normalizedTimestamps (first 10):', normalizedTimestamps.slice(0, 10))
+    console.log('normalizedTimestamps (first 10):', absoluteTimestamps.map(t => normalizer.toAbsolute(t)).slice(0, 10))
 
     console.log('=== 5. RELATIVE TIME ===')
-    console.log('minTimeAbsolute:', minTimeAbsolute)
+    console.log('minTimeAbsolute:', normalizer.absMin)
     console.log('labels (first 10):', labels.slice(0, 10))
-    console.log('labels range:', Math.min(...labels), 'to', Math.max(...labels))
+    const range = normalizer.getRelativeRange()
+    console.log('labels range:', range.min, 'to', range.max)
 
     const normalizeData = (data) => {
       if (Array.isArray(data)) return data;
@@ -367,7 +362,8 @@ export default function ComparisonView({ allProfiles }) {
         series.forEach(p => {
           const norm = normalizePoint(p)
           if (norm) {
-            const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+            // Use normalizer to convert raw timestamp to relative time
+            const relativeTime = normalizer.toRelative(norm.t)
             dataMap[relativeTime] = norm.v
           }
         })
@@ -395,7 +391,8 @@ export default function ComparisonView({ allProfiles }) {
           arr.forEach(p => {
             const norm = normalizePoint(p)
             if (norm) {
-              const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+              // Use normalizer to convert raw timestamp to relative time
+              const relativeTime = normalizer.toRelative(norm.t)
               dataMap[relativeTime] = norm.v
             }
           })
