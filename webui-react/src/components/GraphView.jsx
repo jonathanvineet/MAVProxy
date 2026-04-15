@@ -288,6 +288,22 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     'rgb(0, 255, 255)',    // cyan
   ]
 
+  // Detect time scale automatically
+  const detectTimeScale = (timestamps) => {
+    if (!timestamps || timestamps.length < 2) return 1
+    const diffs = []
+    for (let i = 1; i < Math.min(5, timestamps.length); i++) {
+      const diff = Math.abs(timestamps[i] - timestamps[i-1])
+      if (diff > 0) diffs.push(diff)
+    }
+    if (diffs.length === 0) return 1
+    const medianDiff = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)]
+    if (medianDiff > 100000) return 1000000
+    if (medianDiff > 1000) return 1000
+    if (medianDiff > 10) return 100
+    return 1
+  }
+
   // Collect all unique timestamps across all series
   const allTimestamps = new Set()
   Object.values(seriesData).forEach(series => {
@@ -306,9 +322,10 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>No data available for this selection</div>
   }
   
-  // Convert to relative time starting from 0, in seconds
-  const minTime = absoluteTimestamps[0]
-  const labels = absoluteTimestamps.map(t => (t - minTime))
+  // Detect time scale and normalize to seconds
+  const timeScale = detectTimeScale(absoluteTimestamps)
+  const minTime = absoluteTimestamps[0] / timeScale
+  const labels = absoluteTimestamps.map(t => t / timeScale)
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData)
@@ -317,20 +334,20 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
       const series = seriesData[field]
       const color = SERIES_COLORS[idx % SERIES_COLORS.length]
 
-      // Create a map of absolute timestamp to value
+      // Create a map of normalized timestamp to value
       const dataMap = {}
       if (Array.isArray(series)) {
         series.forEach(p => {
           const t = p.t ?? p.x
           const v = p.v ?? p.y
           if (t !== undefined && v !== undefined) {
-            dataMap[Number(t)] = Number(v)
+            dataMap[Number(t) / timeScale] = Number(v)
           }
         })
       }
 
-      // Map labels to values (null if not present) - use absolute timestamps for lookup
-      const values = absoluteTimestamps.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
+      // Map labels to values (null if not present) - use normalized timestamps for lookup
+      const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
 
       // For predefined graphs, use the field name directly (e.g., "ATT.Roll")
       // For custom graphs, use message.field format
@@ -359,8 +376,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
 
       annotations[`mode-${idx}`] = {
         type: 'box',
-        xMin: (fm.start - minTime) / 100,  // Convert to relative seconds
-        xMax: (fm.end - minTime) / 100,    // Convert to relative seconds
+        xMin: fm.start / timeScale,  // Normalize using detected time scale
+        xMax: fm.end / timeScale,    // Normalize using detected time scale
         yMin: 'min',
         yMax: 'max',
         backgroundColor: color,
@@ -427,7 +444,9 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
             color: textColor,
             maxTicksLimit: 10,
             callback: function (value) {
-              return Number(value).toFixed(2) + 's'
+              // Labels already normalized to seconds, just display with offset
+              const displayTime = value - minTime
+              return Number(displayTime).toFixed(2) + 's'
             }
           }
         },

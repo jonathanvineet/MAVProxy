@@ -279,6 +279,22 @@ export default function ComparisonView({ allProfiles }) {
       return Number.isNaN(t) || Number.isNaN(v) ? null : { t, v }
     }
 
+    // Detect time scale automatically
+    const detectTimeScale = (timestamps) => {
+      if (!timestamps || timestamps.length < 2) return 1
+      const diffs = []
+      for (let i = 1; i < Math.min(5, timestamps.length); i++) {
+        const diff = Math.abs(timestamps[i] - timestamps[i-1])
+        if (diff > 0) diffs.push(diff)
+      }
+      if (diffs.length === 0) return 1
+      const medianDiff = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)]
+      if (medianDiff > 100000) return 1000000
+      if (medianDiff > 1000) return 1000
+      if (medianDiff > 10) return 100
+      return 1
+    }
+
     const allTimestamps = new Set()
     Object.values(panel.graphData).forEach(series => {
       if (Array.isArray(series)) {
@@ -298,8 +314,10 @@ export default function ComparisonView({ allProfiles }) {
         })
       }
     })
-    const labels = Array.from(allTimestamps).sort((a, b) => a - b)
-    const minTime = labels.length > 0 ? labels[0] : 0
+    const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
+    const timeScale = detectTimeScale(absoluteTimestamps)
+    const labels = absoluteTimestamps.map(t => t / timeScale)
+    const minTime = absoluteTimestamps.length > 0 ? absoluteTimestamps[0] / timeScale : 0
 
     const normalizeData = (data) => {
       if (Array.isArray(data)) return data;
@@ -323,7 +341,7 @@ export default function ComparisonView({ allProfiles }) {
         const dataMap = {}
         series.forEach(p => {
           const norm = normalizePoint(p)
-          if (norm) dataMap[norm.t] = norm.v
+          if (norm) dataMap[norm.t / timeScale] = norm.v
         })
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
@@ -348,7 +366,7 @@ export default function ComparisonView({ allProfiles }) {
           const dataMap = {}
           arr.forEach(p => {
             const norm = normalizePoint(p)
-            if (norm) dataMap[norm.t] = norm.v
+            if (norm) dataMap[norm.t / timeScale] = norm.v
           })
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
@@ -764,7 +782,7 @@ export default function ComparisonView({ allProfiles }) {
                 const dataMap = {}
                 series.forEach(p => {
                   const norm = extrapolatedPanel.normalizePoint(p)
-                  if (norm) dataMap[norm.t] = norm.v
+                  if (norm) dataMap[norm.t / timeScale] = norm.v
                 })
                 const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
                 datasets.push({
