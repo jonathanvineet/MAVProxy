@@ -316,8 +316,9 @@ export default function ComparisonView({ allProfiles }) {
     })
     const absoluteTimestamps = Array.from(allTimestamps).sort((a, b) => a - b)
     const timeScale = detectTimeScale(absoluteTimestamps)
-    const labels = absoluteTimestamps.map(t => t / timeScale)
-    const minTime = absoluteTimestamps.length > 0 ? absoluteTimestamps[0] / timeScale : 0
+    const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
+    const minTimeAbsolute = absoluteTimestamps.length > 0 ? normalizedTimestamps[0] : 0
+    const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
 
     const normalizeData = (data) => {
       if (Array.isArray(data)) return data;
@@ -341,7 +342,10 @@ export default function ComparisonView({ allProfiles }) {
         const dataMap = {}
         series.forEach(p => {
           const norm = normalizePoint(p)
-          if (norm) dataMap[norm.t / timeScale] = norm.v
+          if (norm) {
+            const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+            dataMap[relativeTime] = norm.v
+          }
         })
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
@@ -366,7 +370,10 @@ export default function ComparisonView({ allProfiles }) {
           const dataMap = {}
           arr.forEach(p => {
             const norm = normalizePoint(p)
-            if (norm) dataMap[norm.t / timeScale] = norm.v
+            if (norm) {
+              const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+              dataMap[relativeTime] = norm.v
+            }
           })
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
@@ -782,7 +789,10 @@ export default function ComparisonView({ allProfiles }) {
                 const dataMap = {}
                 series.forEach(p => {
                   const norm = extrapolatedPanel.normalizePoint(p)
-                  if (norm) dataMap[norm.t / timeScale] = norm.v
+                  if (norm) {
+                    const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+                    dataMap[relativeTime] = norm.v
+                  }
                 })
                 const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
                 datasets.push({

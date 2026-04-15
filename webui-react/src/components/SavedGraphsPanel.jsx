@@ -224,14 +224,19 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     // Detect time scale (seconds, centiseconds, milliseconds, or microseconds)
     const timeScale = detectTimeScale(absoluteTimestamps)
     
-    // Normalize to seconds
-    const minTime = absoluteTimestamps[0] / timeScale
-    const labels = absoluteTimestamps.map(t => t / timeScale) // normalize to seconds
+    // Step 1: Normalize to seconds
+    const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
+    const minTimeAbsolute = normalizedTimestamps[0]
+    
+    // Step 2: Convert to RELATIVE time (0-based from start)
+    const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
+    
     console.log('[SavedGraphs] Time scale detected:', timeScale, '(divide timestamps by this to get seconds)')
     console.log('[SavedGraphs] Sample timestamps (raw):', absoluteTimestamps.slice(0, 5))
-    console.log('[SavedGraphs] Sample timestamps (normalized):', labels.slice(0, 5))
-    console.log('[SavedGraphs] Min time (seconds):', minTime)
-    console.log('[SavedGraphs] Max time (seconds):', labels[labels.length - 1])
+    console.log('[SavedGraphs] Sample timestamps (normalized to seconds):', normalizedTimestamps.slice(0, 5))
+    console.log('[SavedGraphs] Sample timestamps (RELATIVE from start):', labels.slice(0, 5))
+    console.log('[SavedGraphs] Min time (absolute seconds):', minTimeAbsolute)
+    console.log('[SavedGraphs] Max time (relative seconds):', labels[labels.length - 1])
 
     const datasets = []
     let colorIdx = 0
@@ -243,7 +248,11 @@ export default function SavedGraphsPanel({ selectedProfile }) {
         const dataMap = {}
         series.forEach(p => {
           const norm = normalizePoint(p)
-          if (norm) dataMap[norm.t / timeScale] = norm.v  // normalize key to seconds
+          if (norm) {
+            // Convert to relative time: (raw / timeScale) - minTimeAbsolute
+            const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+            dataMap[relativeTime] = norm.v
+          }
         })
         const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
         datasets.push({
@@ -268,7 +277,11 @@ export default function SavedGraphsPanel({ selectedProfile }) {
           const dataMap = {}
           arr.forEach(p => {
             const norm = normalizePoint(p)
-            if (norm) dataMap[norm.t / timeScale] = norm.v  // normalize key to seconds
+            if (norm) {
+              // Convert to relative time: (raw / timeScale) - minTimeAbsolute
+              const relativeTime = (norm.t / timeScale) - minTimeAbsolute
+              dataMap[relativeTime] = norm.v
+            }
           })
           const values = labels.map(t => dataMap[t] !== undefined ? dataMap[t] : null)
           datasets.push({
@@ -289,22 +302,22 @@ export default function SavedGraphsPanel({ selectedProfile }) {
     const chartData = { labels, datasets }
     const maxTime = labels[labels.length - 1]
     let xMin, xMax, yMin, yMax
-    if (xInterval && minTime && maxTime) {
-      const center = (minTime + maxTime) / 2
-      xMin = Math.max(minTime, center - xInterval / 2)
+    if (xInterval && maxTime) {
+      const center = maxTime / 2
+      xMin = Math.max(0, center - xInterval / 2)
       xMax = Math.min(maxTime, center + xInterval / 2)
     }
     if (yInterval) { yMin = -yInterval; yMax = yInterval }
-    console.log('[SavedGraphs] X-axis range:', { xMin, xMax, minTime, maxTime, displayMin: xMin ? (xMin - minTime).toFixed(2) : 'auto', displayMax: xMax ? (xMax - minTime).toFixed(2) : 'auto' })
+    console.log('[SavedGraphs] X-axis range (relative time):', { xMin, xMax, minTime: 0, maxTime, displayMin: xMin ? xMin.toFixed(2) : 'auto', displayMax: xMax ? xMax.toFixed(2) : 'auto' })
 
     const annotations = {}
     if (flightModes && flightModes.length > 0) {
       flightModes.forEach((fm, idx) => {
         const color = FLIGHT_MODE_COLORS[fm.mode] || 'rgba(200, 200, 200, 0.3)'
-        // Normalize flight mode times using same timeScale as data
-        const fmStart = fm.start / timeScale
-        const fmEnd = fm.end / timeScale
-        console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): normalized range ${fmStart.toFixed(2)}s - ${fmEnd.toFixed(2)}s`)
+        // Convert to relative time: (raw / timeScale) - minTimeAbsolute
+        const fmStart = (fm.start / timeScale) - minTimeAbsolute
+        const fmEnd = (fm.end / timeScale) - minTimeAbsolute
+        console.log(`[SavedGraphs] Flight mode ${idx} (${fm.mode}): relative range ${fmStart.toFixed(2)}s - ${fmEnd.toFixed(2)}s`)
         annotations[`mode-${idx}`] = {
           type: 'box',
           xMin: fmStart,
@@ -354,9 +367,8 @@ export default function SavedGraphsPanel({ selectedProfile }) {
             color: '#1a1a1a',
             maxTicksLimit: 12,
             callback: function (value) {
-              // Labels are already normalized to seconds, just display with offset
-              const displayTime = value - minTime
-              return Number(displayTime).toFixed(2) + 's'
+              // Values are already in RELATIVE time (0-based from start)
+              return Number(value).toFixed(2) + 's'
             }
           },
           grid: { color: 'rgba(0,0,0,0.1)' },

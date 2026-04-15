@@ -322,10 +322,11 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
     return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>No data available for this selection</div>
   }
   
-  // Detect time scale and normalize to seconds
+  // Detect time scale and convert to RELATIVE time
   const timeScale = detectTimeScale(absoluteTimestamps)
-  const minTime = absoluteTimestamps[0] / timeScale
-  const labels = absoluteTimestamps.map(t => t / timeScale)
+  const normalizedTimestamps = absoluteTimestamps.map(t => t / timeScale)
+  const minTimeAbsolute = normalizedTimestamps[0]
+  const labels = normalizedTimestamps.map(t => t - minTimeAbsolute)
 
   // Build datasets for each field
   const datasets = Object.keys(seriesData)
@@ -341,7 +342,9 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
           const t = p.t ?? p.x
           const v = p.v ?? p.y
           if (t !== undefined && v !== undefined) {
-            dataMap[Number(t) / timeScale] = Number(v)
+            // Convert to relative time: (raw / timeScale) - minTimeAbsolute
+            const relativeTime = (Number(t) / timeScale) - minTimeAbsolute
+            dataMap[relativeTime] = Number(v)
           }
         })
       }
@@ -376,8 +379,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
 
       annotations[`mode-${idx}`] = {
         type: 'box',
-        xMin: fm.start / timeScale,  // Normalize using detected time scale
-        xMax: fm.end / timeScale,    // Normalize using detected time scale
+        xMin: (fm.start / timeScale) - minTimeAbsolute,  // Convert to relative time
+        xMax: (fm.end / timeScale) - minTimeAbsolute,    // Convert to relative time
         yMin: 'min',
         yMax: 'max',
         backgroundColor: color,
@@ -444,9 +447,8 @@ export default function GraphView({ analysis, token, selected, predefinedGraph, 
             color: textColor,
             maxTicksLimit: 10,
             callback: function (value) {
-              // Labels already normalized to seconds, just display with offset
-              const displayTime = value - minTime
-              return Number(displayTime).toFixed(2) + 's'
+              // Values already in RELATIVE time (0-based from start)
+              return Number(value).toFixed(2) + 's'
             }
           }
         },
